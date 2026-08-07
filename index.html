@@ -1,0 +1,1258 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pladser – prototype v9.0</title>
+
+  <!-- SheetJS bruges kun til at læse regnearket i browseren. Elevdata uploades ikke. -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#f4f5f7; --panel:#fff; --ink:#16181d; --muted:#666b75;
+      --line:#d8dbe2; --dark:#111827; --warn:#fff1c7; --bad:#ffe0e0;
+      --team1:#dbe8ff; --team2:#dff3e4; --team3:#fff0bf;
+      --team4:#ffdede; --team5:#eadfff; --team6:#d8f4f4;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    header{padding:16px 20px;background:var(--dark);color:white;display:flex;justify-content:space-between;align-items:center;gap:16px}
+    header h1{font-size:20px;margin:0}
+    header small{opacity:.8}
+    .app{display:grid;grid-template-columns:390px minmax(0,1fr);gap:14px;padding:14px;transition:grid-template-columns .18s ease}
+    .app.sidebar-hidden{grid-template-columns:0 minmax(0,1fr);gap:0}
+    .app.sidebar-hidden aside{
+      width:0;min-width:0;padding:0;border:0;overflow:hidden;opacity:0;pointer-events:none
+    }
+    .app aside{transition:width .18s ease,padding .18s ease,opacity .14s ease}
+    .sidebar-toggle{
+      position:fixed;left:398px;top:116px;z-index:50;
+      width:34px;height:48px;padding:0;border-radius:0 10px 10px 0;
+      background:var(--dark);color:white;border-color:var(--dark);
+      font-size:18px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.18)
+    }
+    body.sidebar-is-hidden .sidebar-toggle{left:0}
+    @media(max-width:900px){
+      .sidebar-toggle{position:static;width:auto;height:auto;border-radius:9px;margin:8px 14px 0}
+      .app.sidebar-hidden{grid-template-columns:1fr}
+      .app.sidebar-hidden aside{display:none}
+    }
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+    aside{padding:14px;max-height:calc(100vh - 100px);overflow:auto}
+    h2{font-size:16px;margin:0 0 10px}
+    h3{font-size:14px;margin:18px 0 8px}
+    label{font-size:13px;font-weight:650;display:block;margin:8px 0 5px}
+    input[type=file],select,button{font:inherit}
+    input[type=file],select{width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;background:white}
+    button{border:1px solid var(--line);background:white;padding:9px 11px;border-radius:9px;cursor:pointer}
+    button.primary{background:var(--dark);border-color:var(--dark);color:white}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .note,.status{font-size:12px;line-height:1.45;color:var(--muted);margin-top:8px}
+    .status{padding:9px;border-radius:9px;background:#f5f6f8}
+    .status.warn{background:var(--warn);color:#664c00}
+    .status.bad{background:var(--bad);color:#7a1515}
+    .counts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+    .count{padding:7px 8px;border-radius:8px;background:#f5f6f8;font-size:12px}
+    .group-list{display:grid;gap:6px;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:7px}
+    .group-row{display:grid;grid-template-columns:minmax(0,1fr) 115px;gap:7px;align-items:center;font-size:12px}
+    .group-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .group-row select{padding:5px;font-size:12px}
+    .mapping{display:grid;gap:6px}
+    .map-row{display:grid;grid-template-columns:68px minmax(0,1fr);gap:7px;align-items:center}
+    .map-row b{font-size:12px}
+    .room-wrap{overflow:auto;padding:12px;min-width:0}
+    .room{
+      min-width:2050px;
+      min-height:875px;
+      position:relative;
+      border:4px solid #222;
+      background:white;
+      padding:28px 32px 34px;
+    }
+    .door-gap{position:absolute;left:-4px;width:4px;height:58px;background:white}
+    .door-gap.one{top:250px}.door-gap.two{top:525px}
+    .kitchen{position:absolute;right:-4px;top:290px;width:92px;height:125px;border:4px solid #222;border-right:none;background:white;display:grid;place-items:center;font-weight:750;writing-mode:vertical-rl;transform:rotate(180deg)}
+    .buffet{position:absolute;right:115px;top:328px;width:160px;height:160px;border:2px solid #222;border-radius:50%;display:grid;place-items:center;text-align:center;background:#f7ead4;font-weight:750}
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(7,235px);
+      grid-template-rows:245px 245px 245px;
+      gap:18px 18px;
+      align-items:center;
+    }
+    .table-group{
+      height:100%;position:relative;display:grid;place-items:center;
+      border:2px dashed color-mix(in srgb,var(--team) 60%,#777);
+      background:color-mix(in srgb,var(--team) 70%,white);
+      border-radius:15px;
+      overflow:visible;
+    }
+    .team-label{
+      position:absolute;top:-22px;left:50%;transform:translateX(-50%);
+      font-size:11px;font-weight:750;background:white;padding:4px 8px;border-radius:8px;
+      border:1px solid color-mix(in srgb,var(--team) 65%,#666);
+      cursor:pointer;z-index:7;white-space:nowrap;
+    }
+    .team-label::after{content:"";margin-left:5px}
+    .table-group.table-locked .team-label::after{content:"🔒"}
+    .table-group.table-locked{
+      box-shadow:0 0 0 3px rgba(245,158,11,.45) inset;
+    }
+    .table{width:104px;height:204px;border:2px solid #222;border-radius:8px;background:white;position:relative;box-shadow:0 2px 5px rgba(0,0,0,.08);cursor:pointer}
+    .table.selected-table{outline:none}
+    .table-group.selected-area{
+      outline:4px solid #f59e0b;
+      outline-offset:4px;
+      box-shadow:0 0 0 3px rgba(245,158,11,.16) inset;
+    }
+    .table-title{display:none}
+    .seat{
+      position:absolute;min-width:118px;max-width:185px;height:25px;border:1px solid #8b8f98;border-radius:8px;
+      background:rgba(255,255,255,.97);font-size:9.5px;padding:3px 8px;
+      overflow:visible;text-overflow:clip;white-space:nowrap;
+      display:flex;align-items:center;justify-content:center;cursor:grab;z-index:3;
+      transition:width .12s ease,font-size .12s ease;
+    }
+    /* Zig-zag: venstre og højre side får hver sin række. Felterne må gå hen over bordet. */
+    .seat.left{right:50%;margin-right:-34px}
+    .seat.right{left:50%;margin-left:-34px}
+    .seat.left[data-pos="0"]{top:4px}.seat.right[data-pos="0"]{top:23px}
+    .seat.left[data-pos="1"]{top:42px}.seat.right[data-pos="1"]{top:61px}
+    .seat.left[data-pos="2"]{top:80px}.seat.right[data-pos="2"]{top:99px}
+    .seat.left[data-pos="3"]{top:118px}.seat.right[data-pos="3"]{top:137px}
+    .seat.left[data-pos="4"]{top:156px}.seat.right[data-pos="4"]{top:175px}
+    .seat.empty{color:#9a9da5;font-style:italic}
+    .seat.locked{background:#ffe5a6;border-color:#c88b00}
+    .seat.selected{outline:3px solid #2563eb;background:#dbeafe}
+    .top1{grid-column:1;grid-row:1}.top2{grid-column:2;grid-row:1}.top3{grid-column:3;grid-row:1}
+    .top4{grid-column:4;grid-row:1}.top5{grid-column:5;grid-row:1}.top6{grid-column:6;grid-row:1}.top7{grid-column:7;grid-row:1}
+    .mid1{grid-column:1;grid-row:2}.mid2{grid-column:2;grid-row:2}.mid3{grid-column:3;grid-row:2}.mid4{grid-column:4;grid-row:2}
+    .bot1{grid-column:1;grid-row:3}.bot2{grid-column:2;grid-row:3}.bot3{grid-column:3;grid-row:3}
+    .bot4{grid-column:4;grid-row:3}.bot5{grid-column:5;grid-row:3}.bot6{grid-column:6;grid-row:3}.bot7{grid-column:7;grid-row:3}
+    .hidden{display:none!important}
+    @media(max-width:900px){.app{grid-template-columns:1fr}aside{max-height:none}}
+
+    .print-modal{
+      position:fixed;inset:0;background:rgba(15,23,42,.72);
+      display:none;z-index:1000;padding:18px;
+    }
+    .print-modal.open{display:flex;flex-direction:column}
+    .print-toolbar{
+      flex:0 0 auto;background:#fff;border-radius:12px 12px 0 0;
+      padding:10px 14px;display:flex;justify-content:space-between;align-items:center;
+      gap:10px;border-bottom:1px solid var(--line);
+    }
+    .print-toolbar strong{font-size:15px}
+    .print-actions{display:flex;gap:8px}
+    .print-preview-shell{
+      flex:1;min-height:0;background:#d9dde5;border-radius:0 0 12px 12px;
+      overflow:auto;padding:14px;display:flex;justify-content:center;align-items:center;
+    }
+    .print-sheet{
+      width:min(100%, calc((100vh - 125px) * 1.4142));
+      aspect-ratio:420 / 297;
+      background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.22);
+      position:relative;overflow:hidden;
+    }
+    .print-sheet .room{
+      position:absolute;inset:1.8%;
+      width:auto;height:auto;min-width:0;min-height:0;
+      transform:none!important;transform-origin:initial!important;
+      overflow:hidden;padding:1.7% 1.3%;
+      border-width:2px;
+    }
+    .print-sheet .grid{
+      width:100%;height:100%;
+      display:grid;
+      grid-template-columns:repeat(7,minmax(0,1fr));
+      grid-template-rows:repeat(3,minmax(0,1fr));
+      gap:1.6% .7%;
+      transform:none!important;
+      align-items:stretch;
+    }
+    .print-sheet .table-group{
+      width:100%;height:100%;min-width:0;min-height:0;
+      border-radius:7px;
+    }
+    .print-sheet .table{
+      width:22%;height:82%;
+      min-width:24px;min-height:75px;
+    }
+    .print-sheet .team-label{
+      top:-13px;font-size:6.8px;padding:2px 5px;
+    }
+    .print-sheet .seat{
+      width:68%!important;min-width:0!important;max-width:none!important;
+      height:12.3%!important;
+      font-size:7.2px!important;
+      font-weight:650!important;
+      line-height:1!important;
+      padding:0 2px!important;
+      color:#000!important;
+      background:transparent!important;
+      border:none!important;
+      border-radius:0!important;
+      box-shadow:none!important;
+      overflow:visible!important;
+      text-overflow:clip!important;
+    }
+    .print-sheet .seat.empty{
+      color:#777!important;
+      font-style:italic!important;
+      font-weight:400!important;
+    }
+    .print-sheet .seat.left{right:51%;margin-right:1px;text-align:right;justify-content:flex-end}
+    .print-sheet .seat.right{left:51%;margin-left:1px;text-align:left;justify-content:flex-start}
+    .print-sheet .seat.left[data-pos="0"]{top:1%}.print-sheet .seat.right[data-pos="0"]{top:10%}
+    .print-sheet .seat.left[data-pos="1"]{top:19%}.print-sheet .seat.right[data-pos="1"]{top:28%}
+    .print-sheet .seat.left[data-pos="2"]{top:37%}.print-sheet .seat.right[data-pos="2"]{top:46%}
+    .print-sheet .seat.left[data-pos="3"]{top:55%}.print-sheet .seat.right[data-pos="3"]{top:64%}
+    .print-sheet .seat.left[data-pos="4"]{top:73%}.print-sheet .seat.right[data-pos="4"]{top:82%}
+    .print-sheet .kitchen{
+      right:-2px;top:36%;width:5.3%;height:17%;
+      font-size:7px;border-width:2px;
+    }
+    .print-sheet .buffet{
+      right:1.2%;top:38%;width:8.6%;height:auto;aspect-ratio:1;
+      font-size:6.5px;border-width:1px;
+    }
+    .print-sheet .table-group{break-inside:avoid}
+    .print-sheet .selected,
+    .print-sheet .selected-table{outline:none!important}
+    .print-sheet .seat.locked{background:#fff}
+    .print-sheet .table-group.table-locked{box-shadow:none}
+    .print-sheet .table-group.table-locked .team-label::after{content:""}
+
+    @media print{
+      body{background:#fff}
+      body > header,
+      body > .app,
+      .print-toolbar{display:none!important}
+      .print-modal{
+        position:static!important;display:block!important;background:#fff!important;
+        padding:0!important;
+      }
+      .print-preview-shell{
+        display:block!important;background:#fff!important;padding:0!important;overflow:visible!important;
+      }
+      .print-sheet{
+        width:420mm!important;height:297mm!important;aspect-ratio:auto!important;
+        box-shadow:none!important;margin:0!important;overflow:hidden!important;
+      }
+      .print-sheet .room{
+        position:absolute!important;left:5mm!important;top:5mm!important;
+        width:410mm!important;height:287mm!important;
+        inset:auto!important;padding:4mm 3mm!important;
+        border:1.5px solid #111!important;
+      }
+      .print-sheet .grid{
+        width:100%!important;height:100%!important;
+        grid-template-columns:repeat(7,minmax(0,1fr))!important;
+        grid-template-rows:repeat(3,minmax(0,1fr))!important;
+        gap:4mm 2mm!important;
+      }
+      @page{size:A3 landscape;margin:0}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div><h1>Pladser</h1><small>Regnearksimport · gruppefordeling på 3 borde · hele bordområder som klikzoner</small></div>
+  <div id="capacity">0 / 180 pladser</div>
+</header>
+
+<button id="sidebarToggle" class="sidebar-toggle" type="button"
+  aria-expanded="true" aria-controls="controlPanel" title="Skjul sidepanel">‹</button>
+<div id="mainApp" class="app">
+  <aside id="controlPanel" class="panel">
+    <h2>1. Importér regneark</h2>
+    <input id="fileInput" type="file" accept=".xlsx,.xls,.csv">
+    <div class="note">Forventede kolonner: <b>Fornavn</b>, <b>Efternavn</b>, <b>Grupper</b> og <b>Studenthouse</b>. Grupper må gerne stå på flere linjer i samme celle.</div>
+    <div id="importStatus" class="status">Intet regneark indlæst.</div>
+
+    <section id="analysisSection" class="hidden">
+      <h3>2. Klassificér grupper</h3>
+      <div class="note">Teams og rejsehold genkendes automatisk. Andre gruppenavne kan markeres som profilfag eller valgfag.</div>
+      <div id="groupList" class="group-list"></div>
+
+      <h3>3. Vælg fordelingsgrundlag</h3>
+      <label for="basis">Gruppetype</label>
+      <select id="basis">
+        <option value="team">Teams</option>
+        <option value="studenthouse">Gange / Studenthouse</option>
+        <option value="profilfag">Profilfag</option>
+        <option value="rejsehold">Rejsehold</option>
+        <option value="valgfag">Valgfag</option>
+      </select>
+
+      <label for="strategy">Fordeling inden for gruppens 3 borde</label>
+      <select id="strategy">
+        <option value="balanced">Jævn fordeling på gruppens 3 borde</option>
+        <option value="randomWithinGroup">Tilfældig fordeling på gruppens 3 borde</option>
+      </select>
+
+      <div id="basisStatus" class="status"></div>
+
+      <div id="mappingSection">
+        <h3>4. Knyt grupper til bordområder</h3>
+        <div class="note">Hvert område består af tre borde og højst 30 pladser.</div>
+        <div id="mapping" class="mapping"></div>
+      </div>
+
+      <div class="row">
+        <button id="distributeBtn" class="primary">Fordel elever</button>
+        <button id="shuffleBtn">Bland ulåste</button>
+        <button id="clearBtn">Ryd pladser</button>
+      </div>
+      <div class="row">
+        <button id="lockBtn">Lås udfyldte</button>
+        <button id="unlockBtn">Lås alle op</button>
+        <button id="printBtn">Print / PDF</button>
+      </div>
+
+      <h3>Kontrol</h3>
+      <div id="counts" class="counts"></div>
+      <div id="distributionStatus" class="status">Ingen fordeling udført.</div>
+      <div class="note">
+        Klik på et elevnavn for at bytte elever. Navnefelterne udvider sig automatisk efter navnets længde.
+        Klik på selve bordfladen for at vælge et bord, og klik derefter på et andet bord for at bytte deres placering.
+        Klik på gruppetitlen over bordet for at låse eller låse alle elevplaceringer ved bordet op.
+      </div>
+    </section>
+  </aside>
+
+  <main class="panel room-wrap">
+    <section class="room">
+      <div class="door-gap one"></div><div class="door-gap two"></div>
+      <div class="kitchen">KØKKEN</div>
+      <div class="buffet">ANRETTERBORD<br>/ BUFFET</div>
+      <div id="grid" class="grid"></div>
+    </section>
+  </main>
+</div>
+
+
+<div id="printModal" class="print-modal" aria-hidden="true">
+  <div class="print-toolbar">
+    <div><strong>A3-printpreview</strong><div id="pdfStatus" style="font-size:11px;color:#666">PDF gemmes via Del-arket i Quine/iPad eller sendes til Plan 2.0</div></div>
+    <div class="print-actions">
+      <button id="closePrintPreview">Luk</button>
+      <button id="openPrintWindow">Print</button>
+      <button id="confirmPrint" class="primary">Gem / del PDF</button>
+    </div>
+  </div>
+  <div class="print-preview-shell">
+    <div id="printSheet" class="print-sheet"></div>
+  </div>
+</div>
+
+
+<script>
+const layout = [
+  {id:'B7',team:6,cls:'top1'},{id:'B6',team:5,cls:'top2'},{id:'B5',team:4,cls:'top3'},
+  {id:'B4',team:3,cls:'top4'},{id:'B3',team:1,cls:'top5'},{id:'B2',team:1,cls:'top6'},{id:'B1',team:1,cls:'top7'},
+  {id:'B11',team:6,cls:'mid1'},{id:'B10',team:5,cls:'mid2'},{id:'B9',team:4,cls:'mid3'},{id:'B8',team:3,cls:'mid4'},
+  {id:'B18',team:6,cls:'bot1'},{id:'B17',team:5,cls:'bot2'},{id:'B16',team:4,cls:'bot3'},
+  {id:'B15',team:3,cls:'bot4'},{id:'B14',team:2,cls:'bot5'},{id:'B13',team:2,cls:'bot6'},{id:'B12',team:2,cls:'bot7'}
+];
+const teamTables={1:['B1','B2','B3'],2:['B12','B13','B14'],3:['B4','B8','B15'],4:['B5','B9','B16'],5:['B6','B10','B17'],6:['B7','B11','B18']};
+const teamColor={1:'var(--team1)',2:'var(--team2)',3:'var(--team3)',4:'var(--team4)',5:'var(--team5)',6:'var(--team6)'};
+
+let students=[], uniqueGroups=[], groupTypes={}, seats=[], selected=null, selectedTable=null;
+
+function norm(s){return String(s??'').trim()}
+function normKey(s){return norm(s).toLowerCase().replace(/\s+/g,' ')}
+function splitGroups(value){return String(value??'').split(/\r?\n/).map(norm).filter(Boolean)}
+function detectType(group){
+  if(/^team\s*\d+\b/i.test(group)) return 'team';
+  if(/^rejsehold\b/i.test(group)) return 'rejsehold';
+  return 'ukendt';
+}
+function canonicalTeam(group){
+  const m=group.match(/^team\s*([1-6])\b/i);
+  return m ? `Team ${m[1]}` : null;
+}
+
+function buildRoom(){
+  const grid=document.getElementById('grid');
+  layout.forEach(item=>{
+    const wrap=document.createElement('div');
+    wrap.className=`table-group ${item.cls}`;
+    wrap.style.setProperty('--team',teamColor[item.team]);
+    wrap.innerHTML=`<div class="team-label">Team ${item.team}</div>`;
+    const table=document.createElement('div');
+    table.className='table'; table.dataset.table=item.id; table.dataset.area=item.team;
+    table.dataset.seatsLocked='false';
+    table.innerHTML=`<span class="table-title">${item.id}</span>`;
+    ['left','right'].forEach(side=>{
+      for(let p=0;p<5;p++){
+        const seat=document.createElement('button');
+        seat.type='button'; seat.className=`seat ${side} empty`; seat.textContent='Ledig';
+        Object.assign(seat.dataset,{table:item.id,area:String(item.team),side,pos:String(p),locked:'false',studentId:''});
+        table.appendChild(seat); seats.push(seat);
+      }
+    });
+    wrap.appendChild(table); grid.appendChild(wrap);
+
+    const label=wrap.querySelector('.team-label');
+    label.addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleTableSeatLock(table,wrap);
+    });
+
+    wrap.addEventListener('click',e=>{
+      if(e.target.closest('.seat') || e.target.closest('.team-label')) return;
+      e.stopPropagation();
+      selectOrSwapTable(table);
+    });
+
+
+  });
+  bindSeats();
+  seats.forEach(s=>fitSeatLabel(s,s.textContent));
+  updateCapacity();
+}
+function bindSeats(){
+  seats.forEach(seat=>{
+    seat.addEventListener('click',()=>{
+      if(seat.closest('.table')?.dataset.seatsLocked==='true'){
+        return showDistribution('Elevplaceringerne ved dette bord er låst.','warn');
+      }
+      if(!selected){selected=seat;seat.classList.add('selected');return}
+      if(selected===seat){selected.classList.remove('selected');selected=null;return}
+      swapSeats(selected,seat);selected.classList.remove('selected');selected=null;
+    });
+    seat.addEventListener('dblclick',e=>{
+      e.preventDefault();
+      if(seat.closest('.table')?.dataset.seatsLocked==='true') return;
+      const lock=seat.dataset.locked!=='true';
+      seat.dataset.locked=String(lock);seat.classList.toggle('locked',lock);
+    });
+    seat.draggable=true;
+    seat.addEventListener('dragstart',e=>{
+      if(seat.closest('.table')?.dataset.seatsLocked==='true'){e.preventDefault();return}
+      e.dataTransfer.setData('text/plain',String(seats.indexOf(seat)))
+    });
+    seat.addEventListener('dragover',e=>e.preventDefault());
+    seat.addEventListener('drop',e=>{e.preventDefault();const from=seats[Number(e.dataTransfer.getData('text/plain'))];if(from)swapSeats(from,seat)});
+  });
+}
+
+function toggleTableSeatLock(table,wrap){
+  const locked=table.dataset.seatsLocked!=='true';
+  table.dataset.seatsLocked=String(locked);
+  wrap.classList.toggle('table-locked',locked);
+  table.querySelectorAll('.seat').forEach(seat=>{
+    seat.dataset.locked=String(locked);
+    seat.classList.toggle('locked',locked);
+  });
+  showDistribution(locked
+    ? 'Alle elevplaceringer ved bordet er låst.'
+    : 'Elevplaceringerne ved bordet er låst op.');
+}
+
+function selectOrSwapTable(table){
+  if(!selectedTable){
+    selectedTable=table;
+    table.closest('.table-group').classList.add('selected-area');
+    showDistribution('Bord valgt. Klik på et andet bord for at bytte deres placering.');
+    return;
+  }
+  if(selectedTable===table){
+    table.closest('.table-group').classList.remove('selected-area');
+    selectedTable=null;
+    showDistribution('Bordmarkeringen er fjernet.');
+    return;
+  }
+  swapTables(selectedTable,table);
+  selectedTable.closest('.table-group').classList.remove('selected-area');
+  selectedTable=null;
+  showDistribution('De to borde har byttet fysisk placering.');
+}
+
+function swapTables(a,b){
+  const wrapA=a.closest('.table-group');
+  const wrapB=b.closest('.table-group');
+  const parent=wrapA.parentNode;
+  const markerA=document.createComment('table-a');
+  const markerB=document.createComment('table-b');
+
+  parent.replaceChild(markerA,wrapA);
+  parent.replaceChild(markerB,wrapB);
+  parent.replaceChild(wrapB,markerA);
+  parent.replaceChild(wrapA,markerB);
+
+  // Bevar positionerne i CSS-grid ved at bytte positionsklasserne.
+  const posClasses=['top1','top2','top3','top4','top5','top6','top7',
+                    'mid1','mid2','mid3','mid4',
+                    'bot1','bot2','bot3','bot4','bot5','bot6','bot7'];
+  const posA=posClasses.find(c=>wrapA.classList.contains(c));
+  const posB=posClasses.find(c=>wrapB.classList.contains(c));
+  if(posA&&posB){
+    wrapA.classList.remove(posA); wrapB.classList.remove(posB);
+    wrapA.classList.add(posB); wrapB.classList.add(posA);
+  }
+}
+
+
+function measureTextWidth(text, font){
+  const canvas = measureTextWidth.canvas || (measureTextWidth.canvas=document.createElement('canvas'));
+  const ctx=canvas.getContext('2d');
+  ctx.font=font;
+  return ctx.measureText(text).width;
+}
+
+function fitSeatLabel(seat,text){
+  const baseFont=9.5;
+  const minFont=7.8;
+  const minWidth=118;
+  const maxWidth=185;
+  const padding=22;
+
+  let fontSize=baseFont;
+  let needed=measureTextWidth(text, `${fontSize}px Inter, system-ui, sans-serif`) + padding;
+
+  if(needed>maxWidth){
+    fontSize=Math.max(minFont, baseFont*(maxWidth/needed));
+    needed=measureTextWidth(text, `${fontSize}px Inter, system-ui, sans-serif`) + padding;
+  }
+
+  seat.style.fontSize=`${fontSize}px`;
+  seat.style.width=`${Math.max(minWidth,Math.min(maxWidth,Math.ceil(needed)))}px`;
+}
+
+function setSeat(seat,student){
+  seat.dataset.studentId=student?.id??'';
+  const label=student?.name??'Ledig';
+  seat.textContent=label;
+  seat.title=student ? `${student.name}${student.activeGroup?' · '+student.activeGroup:''}` : 'Ledig';
+  seat.classList.toggle('empty',!student);
+  fitSeatLabel(seat,label);
+}
+function swapSeats(a,b){
+  if(a.closest('.table')?.dataset.seatsLocked==='true'||b.closest('.table')?.dataset.seatsLocked==='true')
+    return showDistribution('Elevplaceringerne ved et af bordene er låst.','warn');
+  if(a.dataset.locked==='true'||b.dataset.locked==='true')return showDistribution('En af pladserne er låst.','warn');
+  const sa={id:a.dataset.studentId,name:a.classList.contains('empty')?null:a.textContent,activeGroup:a.title.split(' · ')[1]||''};
+  const sb={id:b.dataset.studentId,name:b.classList.contains('empty')?null:b.textContent,activeGroup:b.title.split(' · ')[1]||''};
+  setSeat(a,sb.name?sb:null);setSeat(b,sa.name?sa:null);updateCapacity();
+}
+function clearSeats(){
+  seats.forEach(s=>{s.dataset.locked='false';s.classList.remove('locked','selected');setSeat(s,null)});
+  document.querySelectorAll('.table').forEach(t=>{t.dataset.seatsLocked='false';t.classList.remove('selected-table')});
+  document.querySelectorAll('.table-group').forEach(w=>w.classList.remove('table-locked','selected-area'));
+  selected=null;selectedTable=null;updateCapacity();
+}
+function updateCapacity(){document.getElementById('capacity').textContent=`${seats.filter(s=>!s.classList.contains('empty')).length} / ${seats.length} pladser`}
+function showImport(text,kind=''){const el=document.getElementById('importStatus');el.textContent=text;el.className=`status ${kind}`}
+function showDistribution(text,kind=''){const el=document.getElementById('distributionStatus');el.textContent=text;el.className=`status ${kind}`}
+
+async function readFile(file){
+  if(!window.XLSX) throw new Error('Regnearkslæseren kunne ikke indlæses. Kontrollér internetforbindelsen og prøv igen.');
+  const data=await file.arrayBuffer();
+  const wb=XLSX.read(data,{type:'array',cellText:true,cellDates:false});
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
+}
+function findColumn(row,candidates){
+  const keys=Object.keys(row);
+  return keys.find(k=>candidates.includes(normKey(k)))||null;
+}
+function importRows(rows){
+  if(!rows.length)throw new Error('Regnearket indeholder ingen datarækker.');
+  const first=rows[0];
+  const colFirst=findColumn(first,['fornavn','first name','firstname']);
+  const colLast=findColumn(first,['efternavn','last name','lastname']);
+  const colGroups=findColumn(first,['grupper','groups']);
+  const colHouse=findColumn(first,['studenthouse','student house']);
+  const missing=[!colFirst&&'Fornavn',!colLast&&'Efternavn',!colGroups&&'Grupper',!colHouse&&'Studenthouse'].filter(Boolean);
+  if(missing.length)throw new Error(`Mangler kolonne(r): ${missing.join(', ')}`);
+
+  students=rows.map((r,i)=>{
+    const firstName=norm(r[colFirst]),lastName=norm(r[colLast]);
+    return {id:String(i+1),firstName,lastName,name:`${firstName} ${lastName}`.trim(),groups:splitGroups(r[colGroups]),studenthouse:norm(r[colHouse])}
+  }).filter(s=>s.name);
+
+  uniqueGroups=[...new Set(students.flatMap(s=>s.groups))].sort((a,b)=>a.localeCompare(b,'da'));
+  groupTypes={};uniqueGroups.forEach(g=>groupTypes[g]=detectType(g));
+}
+function renderGroupClassification(){
+  const list=document.getElementById('groupList');list.innerHTML='';
+  uniqueGroups.forEach(group=>{
+    const row=document.createElement('div');row.className='group-row';
+    const span=document.createElement('span');span.textContent=group;span.title=group;
+    const select=document.createElement('select');
+    [['ukendt','Ukendt'],['team','Team'],['profilfag','Profilfag'],['rejsehold','Rejsehold'],['valgfag','Valgfag']]
+      .forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;select.appendChild(o)});
+    select.value=groupTypes[group];
+    select.addEventListener('change',()=>{groupTypes[group]=select.value;refreshBasis()});
+    row.append(span,select);list.appendChild(row);
+  });
+}
+function membershipsFor(student,basis){
+  if(basis==='studenthouse')return student.studenthouse?[student.studenthouse]:[];
+  const found=student.groups.filter(g=>groupTypes[g]===basis);
+  if(basis==='team')return [...new Set(found.map(canonicalTeam).filter(Boolean))];
+  return found;
+}
+function getBasisGroups(){
+  const basis=document.getElementById('basis').value;
+  return [...new Set(students.flatMap(s=>membershipsFor(s,basis)))].sort((a,b)=>a.localeCompare(b,'da',{numeric:true}));
+}
+function refreshBasis(){
+  if(!students.length)return;
+  const basis=document.getElementById('basis').value;
+  const groups=getBasisGroups();
+  const ambiguous=students.filter(s=>membershipsFor(s,basis).length>1);
+  const missing=students.filter(s=>membershipsFor(s,basis).length===0);
+  document.getElementById('basisStatus').textContent=`${groups.length} grupper fundet · ${missing.length} elever uden gruppe · ${ambiguous.length} elever med flere grupper`;
+  renderMapping(groups);
+  renderCounts(groups,basis);
+}
+function renderMapping(groups){
+  const map=document.getElementById('mapping');map.innerHTML='';
+  document.getElementById('mappingSection').classList.remove('hidden');
+
+  for(let area=1;area<=6;area++){
+    const row=document.createElement('div');row.className='map-row';
+    const label=document.createElement('b');label.textContent=`Område ${area}`;
+    const sel=document.createElement('select');sel.dataset.area=String(area);
+    const empty=document.createElement('option');empty.value='';empty.textContent='— ingen gruppe —';sel.appendChild(empty);
+    groups.forEach(g=>{const o=document.createElement('option');o.value=g;o.textContent=g;sel.appendChild(o)});
+    const teamDefault=`Team ${area}`;
+    if(groups.includes(teamDefault))sel.value=teamDefault;
+    else if(groups[area-1])sel.value=groups[area-1];
+    row.append(label,sel);map.appendChild(row);
+  }
+}
+function renderCounts(groups,basis){
+  const box=document.getElementById('counts');box.innerHTML='';
+  groups.forEach(g=>{
+    const n=students.filter(s=>membershipsFor(s,basis).includes(g)).length;
+    const div=document.createElement('div');div.className='count';div.textContent=`${g}: ${n}`;
+    if(n>30)div.style.background='var(--bad)';
+    box.appendChild(div);
+  });
+  const missing=students.filter(s=>membershipsFor(s,basis).length===0).length;
+  if(missing){const div=document.createElement('div');div.className='count';div.style.background='var(--warn)';div.textContent=`Uden gruppe: ${missing}`;box.appendChild(div)}
+}
+function shuffled(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function seatObjectsForTables(tableIds){return tableIds.flatMap(id=>seats.filter(s=>s.dataset.table===id))}
+function balancedOrder(tableIds){
+  const byTable=tableIds.map(id=>seats.filter(s=>s.dataset.table===id));
+  const result=[];
+  for(let round=0;round<10;round++)for(const table of byTable)result.push(table[round]);
+  return result;
+}
+
+function seatIsOccupied(seat){
+  return !!seat && !seat.classList.contains('empty') && !!seat.dataset.studentId;
+}
+function seatCanReceiveStudent(seat){
+  return !!seat &&
+    !seatIsOccupied(seat) &&
+    seat.dataset.locked!=='true' &&
+    seat.closest('.table')?.dataset.seatsLocked!=='true';
+}
+function tablePairState(tableId){
+  const tableSeats=seats.filter(s=>s.dataset.table===tableId);
+  const pairs=[];
+  for(let pos=0;pos<5;pos++){
+    pairs.push({
+      left:tableSeats.find(s=>s.dataset.side==='left'&&Number(s.dataset.pos)===pos),
+      right:tableSeats.find(s=>s.dataset.side==='right'&&Number(s.dataset.pos)===pos)
+    });
+  }
+  return {
+    tableId,
+    pairs,
+    count:tableSeats.filter(seatIsOccupied).length
+  };
+}
+function chooseLeastFilled(states, predicate, randomTie){
+  const candidates=states.filter(predicate);
+  if(!candidates.length)return null;
+  const min=Math.min(...candidates.map(s=>s.count));
+  const tied=candidates.filter(s=>s.count===min);
+  return randomTie ? tied[Math.floor(Math.random()*tied.length)] : tied[0];
+}
+function availableCounterpart(state){
+  for(const pair of state.pairs){
+    if(seatIsOccupied(pair.left)&&seatCanReceiveStudent(pair.right))return pair.right;
+    if(seatIsOccupied(pair.right)&&seatCanReceiveStudent(pair.left))return pair.left;
+  }
+  return null;
+}
+function availableEmptyPair(state){
+  return state.pairs.find(pair=>
+    seatCanReceiveStudent(pair.left)&&seatCanReceiveStudent(pair.right)
+  )||null;
+}
+function anyAvailableSeat(state){
+  for(const pair of state.pairs){
+    if(seatCanReceiveStudent(pair.left))return pair.left;
+    if(seatCanReceiveStudent(pair.right))return pair.right;
+  }
+  return null;
+}
+function distributeWithOppositePriority(members,tableIds,randomTie){
+  const states=tableIds.map(tablePairState);
+  const waiting=[...members];
+  let placed=0;
+  const overflow=[];
+
+  // 1. Giv først en overfor til elever, der allerede sidder alene,
+  // herunder elever på låste pladser.
+  while(waiting.length){
+    const state=chooseLeastFilled(
+      states,
+      s=>!!availableCounterpart(s),
+      randomTie
+    );
+    if(!state)break;
+    const seat=availableCounterpart(state);
+    setSeat(seat,waiting.shift());
+    state.count++;
+    placed++;
+  }
+
+  // 2. Fyld hele modstående par. Fordel parrene mellem de mindst
+  // fyldte borde, så antallet stadig bliver så jævnt som muligt.
+  while(waiting.length>=2){
+    const state=chooseLeastFilled(
+      states,
+      s=>!!availableEmptyPair(s),
+      randomTie
+    );
+    if(!state)break;
+    const pair=availableEmptyPair(state);
+    setSeat(pair.left,waiting.shift());
+    setSeat(pair.right,waiting.shift());
+    state.count+=2;
+    placed+=2;
+  }
+
+  // 3. Hvis elevtallet er ulige, kan én elev mangle en overfor.
+  // Eventuelle øvrige restpladser bruges kun, når perfekte par
+  // ikke længere kan dannes på grund af låste eller optagede sæder.
+  while(waiting.length){
+    const state=chooseLeastFilled(
+      states,
+      s=>!!availableCounterpart(s)||!!anyAvailableSeat(s),
+      randomTie
+    );
+    if(!state){
+      overflow.push(...waiting.splice(0));
+      break;
+    }
+    const seat=availableCounterpart(state)||anyAvailableSeat(state);
+    setSeat(seat,waiting.shift());
+    state.count++;
+    placed++;
+  }
+
+  return {placed,overflow};
+}
+
+function validateSelectedMembership(basis){
+  const ambiguous=students.filter(s=>membershipsFor(s,basis).length>1);
+  if(ambiguous.length)throw new Error(`${ambiguous.length} elever tilhører flere grupper i det valgte fordelingsgrundlag. Ret klassifikationen eller regnearket først.`);
+}
+function distribute(){
+  try{
+    const basis=document.getElementById('basis').value;
+    const strategy=document.getElementById('strategy').value;
+    validateSelectedMembership(basis);
+    const unlocked=seats.filter(s=>s.dataset.locked!=='true' && s.closest('.table')?.dataset.seatsLocked!=='true');
+    unlocked.forEach(s=>setSeat(s,null));
+
+    const retainedStudentIds=new Set(
+      seats.filter(seatIsOccupied).map(s=>String(s.dataset.studentId))
+    );
+    const usable=students
+      .map(s=>({...s,activeGroup:membershipsFor(s,basis)[0]||''}))
+      .filter(s=>s.activeGroup&&!retainedStudentIds.has(String(s.id)));
+    let placed=retainedStudentIds.size,overflow=[];
+
+    const mapping={};
+    document.querySelectorAll('#mapping select').forEach(sel=>{
+      if(sel.value) mapping[sel.value]=Number(sel.dataset.area);
+    });
+
+    for(const group of getBasisGroups()){
+      let members=usable.filter(s=>s.activeGroup===group);
+      const area=mapping[group];
+
+      if(!area){
+        overflow.push(...members);
+        continue;
+      }
+
+      const tableIds=teamTables[area];
+      members=shuffled(members);
+
+      const result=distributeWithOppositePriority(
+        members,
+        tableIds,
+        strategy==='randomWithinGroup'
+      );
+      placed+=result.placed;
+      overflow.push(...result.overflow);
+    }
+
+    updateCapacity();
+    const missing=students.length-usable.length;
+    const unpaired=seats.filter(seat=>{
+      if(!seatIsOccupied(seat))return false;
+      const opposite=seats.find(other=>
+        other.dataset.table===seat.dataset.table &&
+        other.dataset.pos===seat.dataset.pos &&
+        other.dataset.side!==seat.dataset.side
+      );
+      return !seatIsOccupied(opposite);
+    }).length;
+    const bits=[`${placed} elever placeret`,`${unpaired} uden en elev overfor`];
+    if(missing)bits.push(`${missing} uden valgt gruppetype`);
+    if(overflow.length)bits.push(`${overflow.length} uden plads eller bordområde`);
+    showDistribution(bits.join(' · '),overflow.length||missing?'warn':'');
+  }catch(err){showDistribution(err.message,'bad')}
+}
+
+document.getElementById('fileInput').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;
+  showImport('Læser regnearket…');
+  try{
+    const rows=await readFile(file);importRows(rows);renderGroupClassification();
+    document.getElementById('analysisSection').classList.remove('hidden');
+    refreshBasis();
+    showImport(`${students.length} elever og ${uniqueGroups.length} forskellige gruppenavne indlæst.`);
+  }catch(err){
+    students=[];document.getElementById('analysisSection').classList.add('hidden');
+    showImport(err.message,'bad');
+  }
+});
+document.getElementById('basis').addEventListener('change',refreshBasis);
+document.getElementById('strategy').addEventListener('change',refreshBasis);
+document.getElementById('distributeBtn').addEventListener('click',distribute);
+document.getElementById('clearBtn').addEventListener('click',()=>{clearSeats();showDistribution('Alle pladser er ryddet.')});
+document.getElementById('shuffleBtn').addEventListener('click',()=>{
+  const filled=seats.filter(s=>s.dataset.locked!=='true'&&!s.classList.contains('empty')).map(s=>({id:s.dataset.studentId,name:s.textContent,activeGroup:s.title.split(' · ')[1]||''}));
+  const target=seats.filter(s=>s.dataset.locked!=='true');target.forEach(s=>setSeat(s,null));
+  shuffled(filled).forEach((student,i)=>setSeat(target[i],student));updateCapacity();showDistribution('Ulåste elever er blandet.');
+});
+document.getElementById('lockBtn').addEventListener('click',()=>{seats.filter(s=>!s.classList.contains('empty')).forEach(s=>{s.dataset.locked='true';s.classList.add('locked')});showDistribution('Alle udfyldte pladser er låst.')});
+document.getElementById('unlockBtn').addEventListener('click',()=>{seats.forEach(s=>{s.dataset.locked='false';s.classList.remove('locked')});showDistribution('Alle pladser er låst op.')});
+function buildPrintPreview(){
+  const sheet=document.getElementById('printSheet');
+  sheet.innerHTML='';
+  const room=document.querySelector('.app .room').cloneNode(true);
+  room.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+
+  // Fjern interaktive tilstande fra previewet.
+  room.querySelectorAll('.selected,.selected-table').forEach(el=>{
+    el.classList.remove('selected','selected-table');
+  });
+  room.querySelectorAll('.seat').forEach(seat=>{
+    seat.removeAttribute('draggable');
+    seat.removeAttribute('tabindex');
+  });
+
+  sheet.appendChild(room);
+}
+
+function openPrintPreview(){
+  buildPrintPreview();
+  const modal=document.getElementById('printModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+  document.body.style.overflow='hidden';
+}
+
+function closePrintPreview(){
+  const modal=document.getElementById('printModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden','true');
+  document.body.style.overflow='';
+  const sheet=document.getElementById('printSheet');
+  if(sheet) sheet.replaceChildren();
+  selected=null;
+  selectedTable=null;
+  document.querySelectorAll('.selected,.selected-table').forEach(el=>{
+    el.classList.remove('selected','selected-table');
+  });
+}
+
+document.getElementById('printBtn').addEventListener('click',openPrintPreview);
+document.getElementById('closePrintPreview').addEventListener('click',closePrintPreview);
+
+
+let __lastPdfBlob=null;
+let __lastPdfFilename='Pladser-A3.pdf';
+
+function pdfSafeName(name){
+  return String(name||'').replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').trim() || 'Pladser';
+}
+
+function rgbFromArea(area){
+  const colors={
+    1:[219,232,255],2:[223,243,228],3:[255,240,191],
+    4:[255,222,222],5:[234,223,255],6:[216,244,244]
+  };
+  return colors[Number(area)]||[240,240,240];
+}
+
+function tablePositionMap(){
+  return {
+    top1:[0,0],top2:[1,0],top3:[2,0],top4:[3,0],top5:[4,0],top6:[5,0],top7:[6,0],
+    mid1:[0,1],mid2:[1,1],mid3:[2,1],mid4:[3,1],
+    bot1:[0,2],bot2:[1,2],bot3:[2,2],bot4:[3,2],bot5:[4,2],bot6:[5,2],bot7:[6,2]
+  };
+}
+function physicalPositionForWrap(wrap){
+  const map=tablePositionMap();
+  for(const cls of Object.keys(map)) if(wrap.classList.contains(cls)) return map[cls];
+  return [0,0];
+}
+function fitPdfText(pdf,text,maxWidth,startSize,minSize=4.5){
+  let size=startSize;
+  pdf.setFontSize(size);
+  while(size>minSize&&pdf.getTextWidth(text)>maxWidth){
+    size-=.25;
+    pdf.setFontSize(size);
+  }
+  return size;
+}
+
+function buildVectorPdf(){
+  if(!window.jspdf) throw new Error('PDF-biblioteket kunne ikke indlæses.');
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a3',compress:true});
+  const pageW=420,pageH=297,margin=7;
+  const usableW=pageW-margin*2,usableH=pageH-margin*2;
+
+  pdf.setProperties({title:'Pladser – bordplan',subject:'A3 bordplan',creator:'Pladser'});
+  pdf.setDrawColor(25,25,25);pdf.setLineWidth(.45);
+  pdf.rect(margin,margin,usableW,usableH);
+
+  const colGap=2.5,rowGap=5,rightServiceW=44;
+  const gridW=usableW-rightServiceW-5;
+  const colW=(gridW-colGap*6)/7;
+  const rowH=(usableH-rowGap*2)/3;
+
+  // Kun redigeringsrummets borde. Preview-klonen må aldrig indgå.
+  const editorRoom=document.querySelector('.app .room');
+  const wraps=[...editorRoom.querySelectorAll('.table-group')];
+
+  for(const wrap of wraps){
+    const table=wrap.querySelector('.table');
+    const [col,row]=physicalPositionForWrap(wrap);
+    const x=margin+2+col*(colW+colGap);
+    const y=margin+2+row*(rowH+rowGap);
+    const area=Number(table.dataset.area||1);
+    const [r,g,b]=rgbFromArea(area);
+
+    pdf.setFillColor(r,g,b);
+    pdf.setDrawColor(Math.max(0,r-70),Math.max(0,g-70),Math.max(0,b-70));
+    pdf.setLineDashPattern([1.5,1.2],0);
+    pdf.roundedRect(x,y,colW,rowH,2,2,'FD');
+    pdf.setLineDashPattern([],0);
+
+    const label=(wrap.querySelector('.team-label')?.textContent||`Gruppe ${area}`)
+      .replace('🔒','').trim();
+    pdf.setFont('helvetica','bold');pdf.setFontSize(6.5);pdf.setTextColor(0,0,0);
+    pdf.text(label,x+colW/2,y+3.3,{align:'center'});
+
+    const tableW=22;
+    const tableX=x+colW/2-tableW/2;
+    const tableY=y+9;
+    const tableH=rowH-14;
+    pdf.setFillColor(255,255,255);pdf.setDrawColor(20,20,20);pdf.setLineWidth(.45);
+    pdf.roundedRect(tableX,tableY,tableW,tableH,1.5,1.5,'FD');
+
+    const left=[...table.querySelectorAll('.seat.left')]
+      .sort((a,b)=>Number(a.dataset.pos)-Number(b.dataset.pos));
+    const right=[...table.querySelectorAll('.seat.right')]
+      .sort((a,b)=>Number(a.dataset.pos)-Number(b.dataset.pos));
+    const step=tableH/10;
+    const maxNameW=(colW-tableW)/2+12;
+
+    for(let i=0;i<5;i++){
+      const leftName=left[i]&&!left[i].classList.contains('empty')?left[i].textContent.trim():'';
+      const rightName=right[i]&&!right[i].classList.contains('empty')?right[i].textContent.trim():'';
+      const yLeft=tableY+step*(i*2+.72);
+      const yRight=tableY+step*(i*2+1.72);
+
+      if(leftName){
+        pdf.setFont('helvetica','normal');
+        fitPdfText(pdf,leftName,maxNameW,8.0,6.1);
+        pdf.setTextColor(0,0,0);
+
+        // Korte navne må ikke ende midt på bordet. Jo længere navnet er,
+        // desto længere flyttes det ind over bordfladen.
+        const leftWidth=pdf.getTextWidth(leftName);
+        const leftRatio=Math.min(1,leftWidth/22);
+        const leftInset=4.8+(leftRatio*7.0);
+        pdf.text(leftName,tableX+leftInset,yLeft,{align:'right',baseline:'middle'});
+      }
+      if(rightName){
+        pdf.setFont('helvetica','normal');
+        fitPdfText(pdf,rightName,maxNameW,8.0,6.1);
+        pdf.setTextColor(0,0,0);
+
+        const rightWidth=pdf.getTextWidth(rightName);
+        const rightRatio=Math.min(1,rightWidth/22);
+        const rightInset=4.8+(rightRatio*7.0);
+        pdf.text(rightName,tableX+tableW-rightInset,yRight,{align:'left',baseline:'middle'});
+      }
+    }
+  }
+
+  const serviceX=margin+usableW-rightServiceW;
+  const cx=serviceX+rightServiceW/2,cy=pageH/2;
+  pdf.setFillColor(247,234,212);pdf.setDrawColor(30,30,30);
+  pdf.circle(cx,cy,16,'FD');
+  pdf.setFont('helvetica','bold');pdf.setFontSize(7);pdf.setTextColor(0,0,0);
+  pdf.text(['ANRETTERBORD','/ BUFFET'],cx,cy-1.5,{align:'center'});
+  pdf.setLineWidth(.5);
+  pdf.line(serviceX+5,cy-27,serviceX+rightServiceW-3,cy-27);
+  pdf.line(serviceX+5,cy+27,serviceX+rightServiceW-3,cy+27);
+
+  const stamp=new Date().toISOString().slice(0,10);
+  __lastPdfFilename=`${pdfSafeName('Pladser')}-${stamp}.pdf`;
+  return pdf;
+}
+
+function blobToDataUrl(blob){
+  return new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onload=()=>resolve(String(fr.result||''));
+    fr.onerror=()=>reject(fr.error||new Error('Kunne ikke læse PDF-data'));
+    fr.readAsDataURL(blob);
+  });
+}
+function isEmbedded(){
+  try{return !!(window.parent&&window.parent!==window)}catch(_){return false}
+}
+
+async function generatePdfBlob(){
+  const status=document.getElementById('pdfStatus');
+  status.textContent='Genererer PDF…';
+  const pdf=buildVectorPdf();
+  const blob=pdf.output('blob');
+  if(!blob||blob.type!=='application/pdf') throw new Error('PDF kunne ikke bygges.');
+  __lastPdfBlob=blob;
+  status.textContent='PDF er klar.';
+  return {blob,filename:__lastPdfFilename};
+}
+
+async function sendPdfToPlan2(blob,filename){
+  if(!isEmbedded()) throw new Error('Pladser kører ikke inde i Plan 2.0.');
+  const dataUrl=await blobToDataUrl(blob);
+  const requestId='pladser_pdf_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+  const msg={type:'TAVLE_IMPORT_PDF',requestId,source:'Pladser',filename,mime:'application/pdf',dataUrl};
+
+  return new Promise((resolve,reject)=>{
+    let done=false;
+    const finish=(ok,value)=>{
+      if(done)return;done=true;clearTimeout(timer);
+      window.removeEventListener('message',onAck);
+      ok?resolve(value):reject(value instanceof Error?value:new Error(String(value||'PDF blev ikke modtaget')));
+    };
+    const onAck=ev=>{
+      const d=ev&&ev.data;
+      if(!d||d.type!=='TAVLE_IMPORT_PDF_ACK'||String(d.requestId||'')!==requestId)return;
+      d.ok?finish(true,d):finish(false,new Error(d.error||'PDF blev ikke importeret'));
+    };
+    const timer=setTimeout(()=>finish(false,new Error('Plan 2.0 svarede ikke på PDF-modtagelsen')),12000);
+    window.addEventListener('message',onAck);
+    try{window.parent.postMessage(msg,'*')}catch(err){finish(false,err)}
+  });
+}
+
+async function shareOrSavePdf(){
+  const btn=document.getElementById('confirmPrint');
+  const old=btn.textContent;
+  try{
+    btn.disabled=true;btn.textContent='Laver PDF…';
+    const {blob,filename}=await generatePdfBlob();
+
+    // Inde i Plan 2.0 bruger vi den gennemprøvede dataURL/postMessage-bro.
+    if(isEmbedded()){
+      btn.textContent='Sender til Plan 2.0…';
+      await sendPdfToPlan2(blob,filename);
+      document.getElementById('pdfStatus').textContent='PDF sendt til Plan 2.0.';
+      btn.textContent='Sendt';
+      return;
+    }
+
+    // Quine/iPad: brug det native Del-ark. Ingen blob:-navigation.
+    const file=new File([blob],filename,{type:'application/pdf'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){
+      btn.textContent='Åbner Del…';
+      await navigator.share({files:[file],title:'Pladser',text:'A3-bordplan'});
+      document.getElementById('pdfStatus').textContent='PDF delt eller gemt.';
+      return;
+    }
+
+    // Sidste fallback uden blob-URL: data-URL.
+    const dataUrl=await blobToDataUrl(blob);
+    const a=document.createElement('a');
+    a.href=dataUrl;a.download=filename;
+    document.body.appendChild(a);a.click();a.remove();
+    document.getElementById('pdfStatus').textContent='PDF-download startet.';
+  }catch(err){
+    // Afbrudt Del-ark er ikke en egentlig fejl.
+    if(err&&err.name==='AbortError'){
+      document.getElementById('pdfStatus').textContent='Deling annulleret.';
+    }else{
+      document.getElementById('pdfStatus').textContent='Fejl: '+(err?.message||err);
+      alert(err?.message||String(err));
+    }
+  }finally{
+    btn.disabled=false;btn.textContent=old;
+  }
+}
+
+function openCleanPrintWindow(){
+  const sheet=document.getElementById('printSheet');
+  const printWindow=window.open('','_blank');
+  if(!printWindow){
+    alert('Det nye vindue blev blokeret. Åbn filen i Safari og prøv igen.');
+    return;
+  }
+
+  const styles=[...document.querySelectorAll('style')]
+    .map(style=>style.outerHTML)
+    .join('\n');
+
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+  <html lang="da">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Pladser – A3</title>
+    ${styles}
+    <style>
+      html,body{margin:0;background:#fff}
+      .print-modal{display:block!important;position:static!important;padding:0!important;background:#fff!important}
+      .print-toolbar{display:none!important}
+      .print-preview-shell{display:block!important;padding:0!important;background:#fff!important;overflow:visible!important}
+      .print-sheet{width:420mm!important;height:297mm!important;box-shadow:none!important}
+      @page{size:A3 landscape;margin:0}
+    </style>
+  </head>
+  <body>
+    <div class="print-modal open">
+      <div class="print-preview-shell">
+        ${sheet.outerHTML}
+      </div>
+    </div>
+    <script>
+      window.addEventListener('load',()=>setTimeout(()=>window.print(),250));
+    <\/script>
+  </body>
+  </html>`);
+  printWindow.document.close();
+}
+
+document.getElementById('confirmPrint').addEventListener('click',shareOrSavePdf);
+document.getElementById('openPrintWindow').addEventListener('click',openCleanPrintWindow);
+
+
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && document.getElementById('printModal').classList.contains('open')){
+    closePrintPreview();
+  }
+});
+document.querySelector('.room').addEventListener('click',e=>{
+  if(e.target.closest('.table-group')) return;
+  if(selectedTable){
+    selectedTable.closest('.table-group').classList.remove('selected-area');
+    selectedTable=null;
+  }
+});
+
+buildRoom();
+
+const sidebarToggle=document.getElementById('sidebarToggle');
+const mainApp=document.getElementById('mainApp');
+
+function setSidebarHidden(hidden){
+  mainApp.classList.toggle('sidebar-hidden',hidden);
+  document.body.classList.toggle('sidebar-is-hidden',hidden);
+  sidebarToggle.textContent=hidden?'›':'‹';
+  sidebarToggle.title=hidden?'Vis sidepanel':'Skjul sidepanel';
+  sidebarToggle.setAttribute('aria-expanded',String(!hidden));
+  try{localStorage.setItem('pladser_sidebar_hidden',hidden?'1':'0')}catch(_){}
+}
+
+sidebarToggle.addEventListener('click',()=>{
+  setSidebarHidden(!mainApp.classList.contains('sidebar-hidden'));
+});
+
+try{
+  setSidebarHidden(localStorage.getItem('pladser_sidebar_hidden')==='1');
+}catch(_){
+  setSidebarHidden(false);
+}
+
+
+/* Plan 2.0 bridge: protocol scaffold for future stamdata integration.
+   The standalone spreadsheet import remains available. */
+(function installPladserBridge(){
+  const embedded=(()=>{try{return window.parent&&window.parent!==window}catch(_){return false}})();
+
+  function normalizeIncomingStudents(payload){
+    const rows=payload?.students||payload?.elever||payload?.rows||payload?.data;
+    if(!Array.isArray(rows)) return null;
+    return rows.map((r,i)=>({
+      id:String(r.id||r.unilogin||i+1),
+      firstName:String(r.fornavn||r.firstName||'').trim(),
+      lastName:String(r.efternavn||r.lastName||'').trim(),
+      name:String(r.navn||r.name||`${r.fornavn||''} ${r.efternavn||''}`).trim(),
+      groups:Array.isArray(r.grupper||r.groups)
+        ? (r.grupper||r.groups).map(String)
+        : splitGroups(r.grupper||r.groups||''),
+      studenthouse:String(r.studenthouse||r.gang||'').trim()
+    })).filter(s=>s.name);
+  }
+
+  window.addEventListener('message',ev=>{
+    const msg=ev&&ev.data;
+    if(!msg)return;
+    if(!['PLADSER_STAMDATA','PLAN2_STAMDATA','TAVLE_STAMDATA'].includes(msg.type))return;
+    const incoming=normalizeIncomingStudents(msg.payload||msg);
+    if(!incoming||!incoming.length)return;
+
+    students=incoming;
+    uniqueGroups=[...new Set(students.flatMap(s=>s.groups))].sort((a,b)=>a.localeCompare(b,'da'));
+    groupTypes={};uniqueGroups.forEach(g=>groupTypes[g]=detectType(g));
+    renderGroupClassification();
+    document.getElementById('analysisSection').classList.remove('hidden');
+    refreshBasis();
+    showImport(`${students.length} elever indlæst fra Plan 2.0.`);
+  });
+
+  if(embedded){
+    try{
+      window.parent.postMessage({
+        type:'PLADSER_READY',
+        source:'Pladser',
+        accepts:['PLADSER_STAMDATA','PLAN2_STAMDATA','TAVLE_STAMDATA'],
+        fields:['Fornavn','Efternavn','Grupper','Studenthouse']
+      },'*');
+      window.parent.postMessage({type:'PLADSER_STAMDATA_REQUEST',source:'Pladser'},'*');
+    }catch(_){}
+  }
+})();
+
+</script>
+
+
+</body>
+</html>
