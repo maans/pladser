@@ -83,7 +83,7 @@ Køn kan i de nuværende Viggo-stamdata aflæses både fra kolonnen `Køn` og fr
 
 ## Bord- og gruppestruktur
 
-Spisesalen har 18 almindelige elevborde med 10 pladser ved hvert bord – i alt 180 elevpladser. Derudover indgår movebordet i den fysiske oversigt, men bruges ikke som almindeligt elevbord.
+Spisesalen har 18 almindelige elevborde med 10 pladser ved hvert bord – i alt 180 elevpladser. Derudover indgår **Wwoofer-bordet** i den fysiske oversigt. Det er bordet for Wwooferne og indgår ikke i den almindelige elevfordeling.
 
 Et valgt fordelingsgrundlag opdeler eleverne i grupper. Hver gruppe tildeles et antal borde, der passer til gruppens størrelse. En mindre gruppe kan derfor have ét bord, mens en større gruppe kan have to, tre eller flere borde.
 

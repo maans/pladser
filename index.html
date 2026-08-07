@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Pladser – prototype v13.19</title>
+  <title>Pladser – prototype v13.20</title>
 
   <!-- SheetJS bruges kun til at læse regnearket i browseren. Elevdata uploades ikke. -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -146,7 +146,8 @@
       font-size:18px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.18)
     }
     body.sidebar-is-hidden .sidebar-toggle{left:0}
-    body.print-preview-open .sidebar-toggle{display:none!important}
+    body.print-preview-open .sidebar-toggle,
+    body.about-modal-open .sidebar-toggle{display:none!important}
     @media(max-width:900px){
       .sidebar-toggle{position:static;width:auto;height:auto;border-radius:9px;margin:8px 14px 0}
       .app.sidebar-hidden{grid-template-columns:1fr}
@@ -604,7 +605,7 @@
               <label>Række 2 <input id="row2Count" type="number" min="0" max="8" value="3"> borde</label>
               <label>Række 3 <input id="row3Count" type="number" min="0" max="8" value="8"> borde</label>
             </div>
-            <div class="note">Standard: 8 / 3 / 8. Nederste rækkes sidste bord er som standard movebord og bruges ikke til elever.</div>
+            <div class="note">Standard: 8 / 3 / 8. Nederste rækkes sidste bord er som standard Wwoofer-bordet og bruges ikke til elevfordelingen.</div>
           </section>
           <section class="allocation-control">
             <h3>Grupper og borde</h3>
@@ -979,7 +980,7 @@ function buildRoom(){
     const label=wrap.querySelector('.team-label');
     if(item.id==='B24'){
       wrap.classList.add('move-table');
-      label.textContent='MOVEBORD';
+      label.textContent='WWOOFER BORD';
       table.dataset.moveTable='true';
     }else{
       table.dataset.moveTable='false';
@@ -1050,7 +1051,7 @@ function selectOrSwapTable(table){
     selectedTable=table;
     table.closest('.table-group').classList.add('selected-area');
     showDistribution(table.dataset.moveTable==='true'
-      ? 'Movebord valgt. Klik på et gruppebord for at bytte deres fysiske placering.'
+      ? 'Wwoofer-bordet er valgt. Klik på et gruppebord for at bytte deres fysiske placering.'
       : 'Bord valgt. Klik på et andet bord for at bytte deres fysiske placering.');
     return;
   }
@@ -1492,7 +1493,7 @@ function restoreAssignedTablePresentation(){
 
     if(table.dataset.moveTable==='true'){
       wrap?.classList.add('move-table');
-      if(label)label.textContent='MOVEBORD';
+      if(label)label.textContent='WWOOFER BORD';
       return;
     }
 
@@ -1538,7 +1539,7 @@ function refreshMoveTableAppearance(){
     const label=wrap?.querySelector('.team-label');
     const isMove=table.dataset.moveTable==='true';
     wrap?.classList.toggle('move-table',isMove);
-    if(isMove && label)label.textContent='MOVEBORD';
+    if(isMove && label)label.textContent='WWOOFER BORD';
   });
 }
 
@@ -3249,6 +3250,7 @@ async function openAbout(){
   const content=document.getElementById('aboutContent');
   modal.classList.add('open');
   modal.setAttribute('aria-hidden','false');
+  document.body.classList.add('about-modal-open');
   content.textContent='Henter beskrivelsen af Pladser …';
   try{
     const response=await fetch(README_URL,{cache:'no-store'});
@@ -3262,6 +3264,7 @@ function closeAbout(){
   const modal=document.getElementById('aboutModal');
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden','true');
+  document.body.classList.remove('about-modal-open');
 }
 document.getElementById('aboutBtn').addEventListener('click',openAbout);
 document.getElementById('closeAboutBtn').addEventListener('click',closeAbout);
@@ -3276,7 +3279,7 @@ function buildPrintPreview(){
   // Printnavnet må gerne afvige fra redigeringsvisningen.
   room.querySelectorAll('.table[data-move-table="true"]').forEach(table=>{
     const label=table.closest('.table-group')?.querySelector('.team-label');
-    if(label)label.textContent='WOOFER BORD';
+    if(label)label.textContent='WWOOFER BORD';
   });
 
   // Fjern interaktive tilstande fra previewet og giv hvert navn et
@@ -3424,7 +3427,7 @@ function buildVectorPdf(){
     pdf.setLineDashPattern([],0);
 
     const label=(table.dataset.moveTable==='true'
-      ? 'WOOFER BORD'
+      ? 'WWOOFER BORD'
       : (wrap.querySelector('.team-label')?.textContent||(area?`Gruppe ${area}`:'Ledigt bord')))
       .replace('🔒','').trim();
     pdf.setFont('helvetica','bold');pdf.setFontSize(6.5);pdf.setTextColor(0,0,0);
