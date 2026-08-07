@@ -15,8 +15,9 @@ Pladser kan bruges som selvstændig webapp eller integreret som HTML-app i **Pla
 - Automatisk sammensætning af elevnavne fra fornavn og efternavn
 - Genkendelse og klassificering af grupper
 - Valgfrit fordelingsgrundlag
-- Fordeling af hver gruppe over tre borde
+- Fordeling af elevgrupper over et passende antal borde
 - 10 siddepladser pr. bord
+- Mulighed for manuelt at justere, hvor mange borde en gruppe råder over
 - Fordeling med hensyn til elever siddende overfor hinanden
 - Regler for bl.a. køn, teams og gange
 - Mulighed for at sprede eller samle bestemte elevgrupper
@@ -24,7 +25,7 @@ Pladser kan bruges som selvstændig webapp eller integreret som HTML-app i **Pla
 - Manuel flytning og bytning af elever
 - Bytning af hele borde med elever og gruppetilknytning
 - Låsning af enkelte elevplaceringer
-- Låsning af hele borde
+- Låsning af hele borde, inklusive eventuelle tomme pladser
 - Gemte bordplaner, som kan åbnes, omdøbes og duplikeres
 - Backup og gendannelse af gemte bordplaner
 - Skjulbart sidepanel, så hele spisesalen kan ses under redigering
@@ -82,13 +83,15 @@ Køn kan i de nuværende Viggo-stamdata aflæses både fra kolonnen `Køn` og fr
 
 ## Bord- og gruppestruktur
 
-Spisesalen består af 18 borde med 10 pladser ved hvert bord – i alt 180 pladser.
+Spisesalen har 18 almindelige elevborde med 10 pladser ved hvert bord – i alt 180 elevpladser. Derudover indgår movebordet i den fysiske oversigt, men bruges ikke som almindeligt elevbord.
 
-Et valgt fordelingsgrundlag opdeler eleverne i grupper. Hver gruppe knyttes til et område bestående af tre borde og har dermed op til 30 pladser.
+Et valgt fordelingsgrundlag opdeler eleverne i grupper. Hver gruppe tildeles et antal borde, der passer til gruppens størrelse. En mindre gruppe kan derfor have ét bord, mens en større gruppe kan have to, tre eller flere borde.
 
-Fordelingen foregår altid **inden for gruppens tre borde** – ikke på tværs af hele spisesalen.
+Antallet af borde kan justeres manuelt. Det er også muligt at samle flere grupper i samme bordområde.
 
-Hvis der fx fordeles efter gange, kan tre borde være knyttet til `Gimle`, mens tre andre er knyttet til `Hjemstavn`.
+Fordelingen foregår altid **inden for de borde, som gruppen er tildelt** – ikke på tværs af hele spisesalen.
+
+Hvis der fx fordeles efter gange, kan et antal borde være knyttet til `Gimle`, mens andre borde er knyttet til `Hjemstavn`.
 
 Bordene kan bagefter flyttes fysisk uden at miste deres gruppetilknytning.
 
@@ -100,9 +103,9 @@ Et grundprincip er:
 
 > Elever skal så vidt muligt have en anden elev siddende direkte overfor sig.
 
-Fordeleren forsøger samtidig at holde gruppens tre borde hensigtsmæssigt fyldt.
+Fordeleren forsøger samtidig at holde de borde, som gruppen råder over, hensigtsmæssigt fyldt.
 
-Eksempel:
+Hvis en gruppe fx råder over tre borde, kan en fordeling se sådan ud:
 
 - 24 elever → 8 / 8 / 8
 - 25 elever → 9 / 8 / 8
@@ -190,7 +193,7 @@ Et helt bord kan også låses. Når et bord er låst:
 - kan de tomme pladser ved bordet ikke bruges til andre elever
 - respekteres bordet ved nye fordelinger
 
-**Lås alle** låser alle borde og deres elevplaceringer.
+**Lås alle** låser alle borde, deres elevplaceringer og deres eventuelle tomme pladser.
 
 **Lås alle op** frigiver dem igen.
 
@@ -223,6 +226,8 @@ Sidepanelet kan skjules, så hele spisesalen kan udnytte vinduets bredde.
 
 De mest almindelige funktioner ligger fremme i den normale arbejdsgang, mens mere sjældne valg og opsætning er samlet under indstillinger.
 
+Knappen **Om Pladser** viser denne beskrivelse direkte i appen, når der er internetforbindelse.
+
 ## Print og PDF
 
 Pladser har et separat printlayout beregnet til **A3**.
@@ -243,8 +248,6 @@ PDF'en kan deles via systemets normale delingsfunktion.
 Når Pladser kører inde i Plan 2.0, kan PDF'en desuden sendes videre til Plan 2.0.
 
 ## Lokal behandling
-
-Pladser er bygget som en selvstændig HTML-app.
 
 Elevdata og selve fordelingsberegningen behandles lokalt. Der kræves ikke en AI-model eller en ekstern beregningstjeneste for at lave en bordplan.
 
