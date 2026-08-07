@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Pladser – prototype v10.0</title>
+  <title>Pladser – prototype v12.0</title>
 
   <!-- SheetJS bruges kun til at læse regnearket i browseren. Elevdata uploades ikke. -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <style>
@@ -23,6 +24,58 @@
     header small{opacity:.8}
     .header-actions{display:flex;align-items:center;gap:12px;font-weight:700}
     .header-print{background:white;color:var(--dark);border-color:white;font-weight:750;padding:8px 12px}
+    .header-secondary{background:transparent;color:white;border-color:rgba(255,255,255,.38);font-weight:700;padding:8px 11px}
+    .header-secondary:hover{background:rgba(255,255,255,.08)}
+    .library-modal{
+      position:fixed;inset:0;z-index:1200;background:rgba(15,23,42,.72);
+      display:none;padding:18px;
+    }
+    .library-modal.open{display:flex;align-items:center;justify-content:center}
+    .library-card{
+      width:min(920px,96vw);height:min(760px,92vh);background:white;border-radius:16px;
+      box-shadow:0 24px 70px rgba(0,0,0,.3);display:flex;flex-direction:column;overflow:hidden;
+    }
+    .library-head{
+      display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);
+    }
+    .library-head h2{margin:0;font-size:20px}
+    .library-head .spacer{flex:1}
+    .library-body{padding:14px 16px;overflow:auto;flex:1;background:#f6f7f9}
+    .library-empty{
+      padding:36px 18px;text-align:center;color:var(--muted);background:white;
+      border:1px dashed #cbd0d8;border-radius:12px;
+    }
+    .library-list{display:grid;gap:10px}
+    .library-item{
+      display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;
+      padding:12px 14px;background:white;border:1px solid var(--line);border-radius:12px;
+    }
+    .library-open{
+      border:0;background:transparent;padding:0;text-align:left;min-width:0;color:inherit;
+    }
+    .library-open:hover{background:transparent}
+    .library-title{font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .library-meta{font-size:11px;color:var(--muted);margin-top:4px}
+    .library-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+    .library-actions button{padding:6px 8px;font-size:11px}
+    .library-footer{
+      padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;
+      flex-wrap:wrap;align-items:center;background:white;
+    }
+    .library-footer .spacer{flex:1}
+    .save-dialog{
+      position:fixed;inset:0;z-index:1300;background:rgba(15,23,42,.6);
+      display:none;align-items:center;justify-content:center;padding:18px;
+    }
+    .save-dialog.open{display:flex}
+    .save-card{
+      width:min(440px,94vw);background:white;border-radius:14px;padding:18px;
+      box-shadow:0 22px 60px rgba(0,0,0,.3)
+    }
+    .save-card h3{margin:0 0 12px}
+    .save-card input{width:100%;font-size:15px;padding:10px 11px}
+    .save-card .row{margin-top:12px;justify-content:flex-end}
+
     .facelift-panel{display:flex;flex-direction:column;gap:10px}
     .workflow-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
     .workflow-card h2{font-size:18px;margin-bottom:12px}
@@ -281,6 +334,8 @@
   <div><h1>Pladser</h1><small>Regnearksimport · gruppefordeling på 3 borde · hele bordområder som klikzoner</small></div>
   <div class="header-actions">
     <div id="capacity">0 / 180 pladser</div>
+    <button id="libraryBtn" class="header-secondary" type="button">Bordplaner</button>
+    <button id="savePlanBtn" class="header-secondary" type="button">Gem</button>
     <button id="printBtn" class="header-print" type="button">Print / PDF</button>
   </div>
 </header>
@@ -373,6 +428,47 @@
 </div>
 
 
+
+<div id="libraryModal" class="library-modal" aria-hidden="true">
+  <div class="library-card">
+    <div class="library-head">
+      <h2>Bordplaner</h2>
+      <span id="libraryCount" class="status" style="margin:0;padding:6px 8px"></span>
+      <div class="spacer"></div>
+      <label for="librarySort" style="font-size:11px;color:var(--muted)">Sortér</label>
+      <select id="librarySort" style="width:auto;min-width:170px;padding:7px 9px">
+        <option value="updated-desc">Senest gemt</option>
+        <option value="updated-asc">Ældst gemt</option>
+        <option value="title-asc">Titel A–Å</option>
+        <option value="basis-asc">Fordelingsgrundlag</option>
+        <option value="stamdata-asc">Stamdataversion</option>
+      </select>
+      <button id="closeLibraryBtn" type="button">Luk</button>
+    </div>
+    <div class="library-body">
+      <div id="libraryList"></div>
+    </div>
+    <div class="library-footer">
+      <button id="importBackupBtn" type="button">Importér backup</button>
+      <div class="spacer"></div>
+      <button id="exportBackupBtn" type="button">Eksportér backup</button>
+      <input id="importBackupInput" type="file" accept=".zip,application/zip" hidden>
+    </div>
+  </div>
+</div>
+
+<div id="saveDialog" class="save-dialog" aria-hidden="true">
+  <div class="save-card">
+    <h3 id="saveDialogTitle">Gem bordplan</h3>
+    <label for="savePlanTitle">Titel</label>
+    <input id="savePlanTitle" type="text" maxlength="120" placeholder="Fx Normal bordplan">
+    <div class="row">
+      <button id="cancelSaveBtn" type="button">Annuller</button>
+      <button id="confirmSaveBtn" class="primary" type="button">Gem</button>
+    </div>
+  </div>
+</div>
+
 <div id="printModal" class="print-modal" aria-hidden="true">
   <div class="print-toolbar">
     <div><strong>A3-printpreview</strong><div id="pdfStatus" style="font-size:11px;color:#666">PDF gemmes via Del-arket i Quine/iPad eller sendes til Plan 2.0</div></div>
@@ -399,7 +495,7 @@ const layout = [
 const teamTables={1:['B1','B2','B3'],2:['B12','B13','B14'],3:['B4','B8','B15'],4:['B5','B9','B16'],5:['B6','B10','B17'],6:['B7','B11','B18']};
 const teamColor={1:'var(--team1)',2:'var(--team2)',3:'var(--team3)',4:'var(--team4)',5:'var(--team5)',6:'var(--team6)'};
 
-let students=[], uniqueGroups=[], groupTypes={}, seats=[], selected=null, selectedTable=null;
+let students=[], uniqueGroups=[], groupTypes={}, seats=[], selected=null, selectedTable=null, stamdataSource='';
 
 function norm(s){return String(s??'').trim()}
 function normKey(s){return norm(s).toLowerCase().replace(/\s+/g,' ')}
@@ -883,12 +979,13 @@ document.getElementById('fileInput').addEventListener('change',async e=>{
   const file=e.target.files[0];if(!file)return;
   showImport('Læser regnearket…');
   try{
-    const rows=await readFile(file);importRows(rows);renderGroupClassification();
+    const rows=await readFile(file);importRows(rows);stamdataSource=file.name||'Regneark';currentPlanId=null;currentPlanTitle='';currentPlanContextSignature='';renderGroupClassification();
     document.getElementById('analysisSection').classList.remove('hidden');
     refreshBasis();
     showImport(`${students.length} elever og ${uniqueGroups.length} forskellige gruppenavne indlæst.`);
     document.getElementById('stamdataSummary').textContent=`· ${students.length} elever ✓`;
     document.getElementById('stamdataDetails').removeAttribute('open');
+    scheduleWorkspaceAutosave(150);
   }catch(err){
     students=[];document.getElementById('analysisSection').classList.add('hidden');
     document.getElementById('stamdataDetails').setAttribute('open','');
@@ -906,6 +1003,1011 @@ document.getElementById('shuffleBtn').addEventListener('click',()=>{
   shuffled(filled).forEach((student,i)=>setSeat(target[i],student));updateCapacity();showDistribution('Ulåste elever er blandet.');
 });
 document.getElementById('unlockBtn').addEventListener('click',()=>{seats.forEach(s=>{s.dataset.locked='false';s.classList.remove('locked')});showDistribution('Alle pladser er låst op.')});
+
+const PLADSER_DATASET_FORMAT='pladser';
+const PLADSER_DATASET_VERSION=1;
+
+function currentAreaMappings(){
+  const result={};
+  document.querySelectorAll('#mapping select[data-area]').forEach(sel=>{
+    result[String(sel.dataset.area)]=sel.value||'';
+  });
+  return result;
+}
+
+function currentPhysicalTablePositions(){
+  const posClasses=['top1','top2','top3','top4','top5','top6','top7',
+                    'mid1','mid2','mid3','mid4',
+                    'bot1','bot2','bot3','bot4','bot5','bot6','bot7'];
+  const result={};
+  document.querySelectorAll('.table-group').forEach(wrap=>{
+    const table=wrap.querySelector('.table');
+    const pos=posClasses.find(c=>wrap.classList.contains(c));
+    if(table&&pos) result[table.dataset.table]=pos;
+  });
+  return result;
+}
+
+function currentSeatState(){
+  return seats.map(seat=>({
+    tableId:seat.dataset.table,
+    side:seat.dataset.side,
+    pos:Number(seat.dataset.pos),
+    studentId:seat.dataset.studentId||null,
+    studentName:seat.classList.contains('empty')?null:seat.textContent,
+    activeGroup:seat.classList.contains('empty')?'':(seat.title.split(' · ')[1]||''),
+    locked:seat.dataset.locked==='true'
+  }));
+}
+
+
+function currentStamdataFingerprint(){
+  const canonical=students.map(s=>({
+    id:String(s.id??''),
+    firstName:s.firstName||'',
+    lastName:s.lastName||'',
+    groups:[...(s.groups||[])].map(String).sort(),
+    studenthouse:s.studenthouse||''
+  })).sort((a,b)=>a.id.localeCompare(b.id,'da'));
+  const text=JSON.stringify(canonical);
+
+  // Small deterministic FNV-1a style fingerprint. Not cryptographic;
+  // only used to recognize whether two plans use the same stamdata snapshot.
+  let h=2166136261;
+  for(let i=0;i<text.length;i++){
+    h^=text.charCodeAt(i);
+    h=Math.imul(h,16777619);
+  }
+  return ('00000000'+(h>>>0).toString(16)).slice(-8);
+}
+function currentStamdataVersionLabel(){
+  if(stamdataSource)return stamdataSource;
+  return `Stamdata ${currentStamdataFingerprint()}`;
+}
+
+
+function currentPlanContext(){
+  return {
+    basis:document.getElementById('basis')?.value||'',
+    areaMappings:currentAreaMappings(),
+    stamdataFingerprint:currentStamdataFingerprint()
+  };
+}
+
+function contextSignature(ctx=currentPlanContext()){
+  const mappings=Object.entries(ctx.areaMappings||{})
+    .sort((a,b)=>Number(a[0])-Number(b[0]))
+    .map(([k,v])=>`${k}:${String(v||'').trim()}`)
+    .join('|');
+  return `${ctx.basis||''}::${mappings}::${ctx.stamdataFingerprint||''}`;
+}
+
+function activePlanContextChanged(){
+  if(!currentPlanId)return false;
+  if(!currentPlanContextSignature)return true;
+  return contextSignature()!==currentPlanContextSignature;
+}
+
+function compactGroupSummary(){
+  const values=[...new Set(
+    [...document.querySelectorAll('#mapping select[data-area]')]
+      .map(sel=>String(sel.value||'').trim())
+      .filter(Boolean)
+  )];
+  if(!values.length)return '';
+  if(values.length<=2)return values.join(' / ');
+  return `${values[0]} / ${values[1]} +${values.length-2}`;
+}
+
+function cleanStamdataLabel(){
+  let label=String(currentStamdataVersionLabel()||'').trim();
+  label=label.replace(/\.(xlsx|xls|csv)$/i,'');
+  label=label.replace(/^Stamdata[\s_-]*/i,'Stamdata ');
+  return label||`Stamdata ${currentStamdataFingerprint()}`;
+}
+
+function suggestedPlanTitle(){
+  const basis=basisLabel(document.getElementById('basis')?.value||'');
+  const groups=compactGroupSummary();
+  const stam=cleanStamdataLabel();
+  const date=new Intl.DateTimeFormat('da-DK',{dateStyle:'medium'}).format(new Date());
+  return [basis,groups,stam,date].filter(Boolean).join(' · ');
+}
+
+function createPladserDataset(){
+  return {
+    format:PLADSER_DATASET_FORMAT,
+    formatVersion:PLADSER_DATASET_VERSION,
+    savedAt:new Date().toISOString(),
+    app:'Pladser',
+    stamdata:{
+      source:stamdataSource||'',
+      versionLabel:currentStamdataVersionLabel(),
+      fingerprint:currentStamdataFingerprint(),
+      students:students.map(s=>({
+        id:String(s.id??''),
+        firstName:s.firstName||'',
+        lastName:s.lastName||'',
+        name:s.name||'',
+        groups:Array.isArray(s.groups)?[...s.groups]:[],
+        studenthouse:s.studenthouse||''
+      }))
+    },
+    settings:{
+      basis:document.getElementById('basis').value,
+      strategy:document.getElementById('strategy').value,
+      groupTypes:{...groupTypes},
+      areaMappings:currentAreaMappings()
+    },
+    room:{
+      tablePositions:currentPhysicalTablePositions(),
+      tableLocks:Object.fromEntries(
+        [...document.querySelectorAll('.table')].map(t=>[t.dataset.table,t.dataset.seatsLocked==='true'])
+      ),
+      seats:currentSeatState()
+    }
+  };
+}
+
+function safeDatasetFilename(){
+  const d=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  return `Pladser_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}.pladser.json`;
+}
+
+
+
+function validatePladserDataset(data){
+  if(!data||data.format!==PLADSER_DATASET_FORMAT)
+    throw new Error('Filen er ikke et Pladser-datasæt.');
+  if(Number(data.formatVersion)!==PLADSER_DATASET_VERSION)
+    throw new Error(`Pladser-format ${data.formatVersion??'?'} understøttes ikke af denne version.`);
+  if(!Array.isArray(data.stamdata?.students))
+    throw new Error('Datasættet mangler stamdata.');
+  if(!Array.isArray(data.room?.seats))
+    throw new Error('Datasættet mangler siddepladser.');
+}
+
+function restorePhysicalTablePositions(positionMap){
+  if(!positionMap||typeof positionMap!=='object')return;
+  const posClasses=['top1','top2','top3','top4','top5','top6','top7',
+                    'mid1','mid2','mid3','mid4',
+                    'bot1','bot2','bot3','bot4','bot5','bot6','bot7'];
+  document.querySelectorAll('.table').forEach(table=>{
+    const wanted=positionMap[table.dataset.table];
+    const wrap=table.closest('.table-group');
+    if(!wanted||!wrap||!posClasses.includes(wanted))return;
+    posClasses.forEach(c=>wrap.classList.remove(c));
+    wrap.classList.add(wanted);
+  });
+}
+
+function restoreAreaMappings(areaMappings){
+  if(!areaMappings)return;
+  document.querySelectorAll('#mapping select[data-area]').forEach(sel=>{
+    const wanted=areaMappings[String(sel.dataset.area)]??'';
+    if([...sel.options].some(o=>o.value===wanted))sel.value=wanted;
+  });
+  updateAreaTableTitles();
+}
+
+function restoreSeatsFromDataset(savedSeats){
+  const byStudentId=new Map(students.map(s=>[String(s.id),s]));
+
+  seats.forEach(s=>{
+    s.dataset.locked='false';
+    s.classList.remove('locked','selected');
+    setSeat(s,null);
+  });
+
+  for(const saved of savedSeats){
+    const seat=seats.find(s=>
+      s.dataset.table===String(saved.tableId) &&
+      s.dataset.side===String(saved.side) &&
+      Number(s.dataset.pos)===Number(saved.pos)
+    );
+    if(!seat||!saved.studentId)continue;
+
+    const live=byStudentId.get(String(saved.studentId));
+    const student=live
+      ? {...live,activeGroup:saved.activeGroup||''}
+      : {
+          id:String(saved.studentId),
+          name:saved.studentName||`Elev ${saved.studentId}`,
+          activeGroup:saved.activeGroup||''
+        };
+
+    setSeat(seat,student);
+    seat.dataset.locked=String(!!saved.locked);
+    seat.classList.toggle('locked',!!saved.locked);
+  }
+}
+
+function restoreTableLocks(tableLocks){
+  document.querySelectorAll('.table').forEach(table=>{
+    const locked=!!tableLocks?.[table.dataset.table];
+    table.dataset.seatsLocked=String(locked);
+
+    const wrap=table.closest('.table-group');
+    wrap?.classList.toggle('table-locked',locked);
+
+    if(locked){
+      table.querySelectorAll('.seat').forEach(seat=>{
+        seat.dataset.locked='true';
+        seat.classList.add('locked');
+      });
+    }
+  });
+}
+
+function loadPladserDataset(data){
+  validatePladserDataset(data);
+
+  students=data.stamdata.students.map((s,i)=>({
+    id:String(s.id??i+1),
+    firstName:s.firstName||'',
+    lastName:s.lastName||'',
+    name:s.name||`${s.firstName||''} ${s.lastName||''}`.trim(),
+    groups:Array.isArray(s.groups)?s.groups.map(String):[],
+    studenthouse:s.studenthouse||''
+  })).filter(s=>s.name);
+
+  stamdataSource=data.stamdata.source||'Pladser-datasæt';
+
+  uniqueGroups=[...new Set(students.flatMap(s=>s.groups))]
+    .sort((a,b)=>a.localeCompare(b,'da'));
+
+  groupTypes={};
+  uniqueGroups.forEach(g=>{
+    groupTypes[g]=data.settings?.groupTypes?.[g]||detectType(g);
+  });
+
+  renderGroupClassification();
+  document.getElementById('analysisSection').classList.remove('hidden');
+
+  const basis=data.settings?.basis;
+  if(basis && [...document.getElementById('basis').options].some(o=>o.value===basis)){
+    document.getElementById('basis').value=basis;
+  }
+
+  const strategy=data.settings?.strategy;
+  if(strategy && [...document.getElementById('strategy').options].some(o=>o.value===strategy)){
+    document.getElementById('strategy').value=strategy;
+  }
+
+  // Rebuild controls first, then restore the saved working state.
+  refreshBasis();
+  restoreAreaMappings(data.settings?.areaMappings);
+  restorePhysicalTablePositions(data.room?.tablePositions);
+  restoreSeatsFromDataset(data.room.seats);
+  restoreTableLocks(data.room?.tableLocks);
+
+  document.getElementById('stamdataSummary').textContent=
+    `· ${students.length} elever fra bordplan ✓`;
+  document.getElementById('stamdataDetails').removeAttribute('open');
+
+  showImport(`${students.length} elever indlæst fra gemt Pladser-bordplan.`);
+
+  selected=null;
+  selectedTable=null;
+  document.querySelectorAll('.selected,.selected-table').forEach(el=>{
+    el.classList.remove('selected','selected-table');
+  });
+
+  updateCapacity();
+}
+
+const PLADSER_DB_NAME='PladserLibrary';
+const PLADSER_STORE='plans';
+const PLADSER_WORKSPACE_DB_NAME='PladserWorkspace';
+const PLADSER_WORKSPACE_DB_VERSION=1;
+const PLADSER_STATE_STORE='state';
+let currentPlanId=null;
+let currentPlanTitle='';
+let currentPlanContextSignature='';
+let workspaceAutosaveTimer=null;
+let workspaceAutosaveSuspended=false;
+
+function openPladserDb(){
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    let req;
+    const finish=(ok,value)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      ok?resolve(value):reject(value instanceof Error?value:new Error(String(value||'Kunne ikke åbne Bordplansbiblioteket.')));
+    };
+    const timer=setTimeout(()=>finish(false,new Error('Bordplansbiblioteket kunne ikke åbnes. Luk evt. andre åbne Pladser-vinduer og prøv igen.')),5000);
+
+    try{
+      // Ingen versionsparameter: eksisterende v1/v2-biblioteker kan åbnes
+      // uden en blokerende schema-migration.
+      req=indexedDB.open(PLADSER_DB_NAME);
+      req.onsuccess=()=>{
+        const db=req.result;
+        if(!db.objectStoreNames.contains(PLADSER_STORE)){
+          try{db.close()}catch(_){}
+          // Kun helt nye/ufuldstændige databaser behøver schema-oprettelse.
+          const createReq=indexedDB.open(PLADSER_DB_NAME,(db.version||0)+1);
+          createReq.onupgradeneeded=()=>{
+            const cdb=createReq.result;
+            if(!cdb.objectStoreNames.contains(PLADSER_STORE)){
+              const store=cdb.createObjectStore(PLADSER_STORE,{keyPath:'id'});
+              store.createIndex('updatedAt','updatedAt');
+              store.createIndex('title','title');
+            }
+          };
+          createReq.onsuccess=()=>finish(true,createReq.result);
+          createReq.onerror=()=>finish(false,createReq.error);
+          createReq.onblocked=()=>finish(false,new Error('Bordplansbiblioteket er låst af et andet åbent Pladser-vindue.'));
+          return;
+        }
+        finish(true,db);
+      };
+      req.onerror=()=>finish(false,req.error||new Error('Kunne ikke åbne Bordplansbiblioteket.'));
+      req.onblocked=()=>finish(false,new Error('Bordplansbiblioteket er låst af et andet åbent Pladser-vindue.'));
+    }catch(err){finish(false,err)}
+  });
+}
+
+function openWorkspaceDb(){
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    const finish=(ok,value)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      ok?resolve(value):reject(value instanceof Error?value:new Error(String(value||'Kunne ikke åbne autosave-lageret.')));
+    };
+    const timer=setTimeout(()=>finish(false,new Error('Autosave-lageret kunne ikke åbnes.')),4000);
+    try{
+      const req=indexedDB.open(PLADSER_WORKSPACE_DB_NAME,PLADSER_WORKSPACE_DB_VERSION);
+      req.onupgradeneeded=()=>{
+        const db=req.result;
+        if(!db.objectStoreNames.contains(PLADSER_STATE_STORE)){
+          db.createObjectStore(PLADSER_STATE_STORE,{keyPath:'key'});
+        }
+      };
+      req.onsuccess=()=>finish(true,req.result);
+      req.onerror=()=>finish(false,req.error||new Error('Kunne ikke åbne autosave-lageret.'));
+      req.onblocked=()=>finish(false,new Error('Autosave-lageret er låst af et andet Pladser-vindue.'));
+    }catch(err){finish(false,err)}
+  });
+}
+
+async function libraryPut(record){
+  const db=await openPladserDb();
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    let tx=null;
+    const timer=setTimeout(()=>{
+      try{tx?.abort()}catch(_){}
+      finish(false,new Error('Gemningen tog for lang tid. Prøv igen.'));
+    },5000);
+
+    const finish=(ok,value)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      try{db.close()}catch(_){}
+      ok ? resolve(value) : reject(
+        value instanceof Error ? value : new Error(String(value||'Bordplanen kunne ikke gemmes.'))
+      );
+    };
+
+    try{
+      tx=db.transaction(PLADSER_STORE,'readwrite');
+      const req=tx.objectStore(PLADSER_STORE).put(record);
+
+      // På iPad/WebKit kan tx.oncomplete i enkelte wrappers være sen eller
+      // udeblive. request-success betyder, at posten er accepteret af IDB.
+      req.onsuccess=()=>finish(true,record);
+      req.onerror=()=>finish(false,req.error||new Error('Bordplanen kunne ikke skrives til biblioteket.'));
+      tx.onerror=()=>finish(false,tx.error||new Error('Bordplanen kunne ikke gemmes.'));
+      tx.onabort=()=>finish(false,tx.error||new Error('Gemningen blev afbrudt.'));
+    }catch(err){
+      finish(false,err);
+    }
+  });
+}
+async function libraryGet(id){
+  const db=await openPladserDb();
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction(PLADSER_STORE,'readonly').objectStore(PLADSER_STORE).get(id);
+    req.onsuccess=()=>{const v=req.result;db.close();resolve(v)};
+    req.onerror=()=>{const e=req.error;db.close();reject(e)};
+  });
+}
+async function libraryGetAll(){
+  const db=await openPladserDb();
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction(PLADSER_STORE,'readonly').objectStore(PLADSER_STORE).getAll();
+    req.onsuccess=()=>{
+      const rows=(req.result||[]).sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+      db.close();resolve(rows);
+    };
+    req.onerror=()=>{const e=req.error;db.close();reject(e)};
+  });
+}
+async function libraryDelete(id){
+  const db=await openPladserDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(PLADSER_STORE,'readwrite');
+    tx.objectStore(PLADSER_STORE).delete(id);
+    tx.oncomplete=()=>{db.close();resolve()};
+    tx.onerror=()=>{const e=tx.error;db.close();reject(e)};
+  });
+}
+
+async function statePut(record){
+  const db=await openWorkspaceDb();
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    let tx=null;
+    const timer=setTimeout(()=>{
+      try{tx?.abort()}catch(_){}
+      finish(false,new Error('Autosave tog for lang tid.'));
+    },4000);
+    const finish=(ok,value)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      try{db.close()}catch(_){}
+      ok?resolve(value):reject(value instanceof Error?value:new Error(String(value||'Kunne ikke gemme arbejdsstate.')));
+    };
+    try{
+      tx=db.transaction(PLADSER_STATE_STORE,'readwrite');
+      const req=tx.objectStore(PLADSER_STATE_STORE).put(record);
+      req.onsuccess=()=>finish(true,record);
+      req.onerror=()=>finish(false,req.error);
+      tx.onerror=()=>finish(false,tx.error);
+      tx.onabort=()=>finish(false,tx.error||new Error('Autosave blev afbrudt.'));
+    }catch(err){finish(false,err)}
+  });
+}
+async function stateGet(key){
+  const db=await openWorkspaceDb();
+  return new Promise((resolve,reject)=>{
+    try{
+      const req=db.transaction(PLADSER_STATE_STORE,'readonly').objectStore(PLADSER_STATE_STORE).get(key);
+      req.onsuccess=()=>{const value=req.result;db.close();resolve(value)};
+      req.onerror=()=>{const err=req.error;db.close();reject(err)};
+    }catch(err){try{db.close()}catch(_){}reject(err)}
+  });
+}
+async function saveWorkspaceNow(){
+  if(workspaceAutosaveSuspended||!students.length)return false;
+  try{
+    await statePut({
+      key:'workspace',
+      updatedAt:new Date().toISOString(),
+      currentPlanId:currentPlanId||null,
+      currentPlanTitle:currentPlanTitle||'',
+      currentPlanContextSignature:currentPlanContextSignature||'',
+      dataset:createPladserDataset()
+    });
+    return true;
+  }catch(err){
+    console.warn('Pladser autosave mislykkedes',err);
+    return false;
+  }
+}
+function scheduleWorkspaceAutosave(delay=450){
+  if(workspaceAutosaveSuspended||!students.length)return;
+  clearTimeout(workspaceAutosaveTimer);
+  workspaceAutosaveTimer=setTimeout(()=>saveWorkspaceNow(),delay);
+}
+async function restoreWorkspaceOnStartup(){
+  try{
+    const state=await stateGet('workspace');
+    if(!state?.dataset)return false;
+    workspaceAutosaveSuspended=true;
+    try{
+      loadPladserDataset(state.dataset);
+      currentPlanId=state.currentPlanId||null;
+      currentPlanTitle=state.currentPlanTitle||'';
+      currentPlanContextSignature=state.currentPlanContextSignature||'';
+      showDistribution(currentPlanTitle
+        ? `Sidste arbejdssession gendannet: “${currentPlanTitle}”.`
+        : 'Sidste arbejdssession er gendannet.');
+    }finally{
+      workspaceAutosaveSuspended=false;
+    }
+    return true;
+  }catch(err){
+    console.warn('Kunne ikke gendanne sidste arbejdssession',err);
+    workspaceAutosaveSuspended=false;
+    return false;
+  }
+}
+
+
+const PLADSER_PLAN_STATE_FORMAT='pladser-library-state';
+const PLADSER_PLAN_STATE_VERSION=1;
+let planLibrarySyncTimer=null;
+let applyingPlanLibraryState=false;
+let planStateReceived=false;
+
+function isEmbeddedInParent(){
+  try{return window.parent&&window.parent!==window}catch(_){return false}
+}
+
+async function buildPlanLibraryState(){
+  const plans=await libraryGetAll();
+  return {
+    format:PLADSER_PLAN_STATE_FORMAT,
+    formatVersion:PLADSER_PLAN_STATE_VERSION,
+    savedAt:new Date().toISOString(),
+    activePlanId:currentPlanId||null,
+    activePlanTitle:currentPlanTitle||'',
+    plans
+  };
+}
+
+function postPlanBridge(type,payload={}){
+  if(!isEmbeddedInParent())return false;
+  try{
+    window.parent.postMessage({
+      protocol:'plan-htmlapp-v1',
+      app:'pladser',
+      type,
+      requestId:'pladser_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8),
+      payload
+    },'*');
+    return true;
+  }catch(err){
+    console.warn('Pladser → Plan bridge mislykkedes',err);
+    return false;
+  }
+}
+
+async function syncLibraryToPlan(){
+  if(applyingPlanLibraryState||!isEmbeddedInParent())return false;
+  try{
+    const state=await buildPlanLibraryState();
+    // Use PlanBridge when Plan has injected it; direct protocol is fallback
+    // and is supported by the current Plan 2.0 generic bridge.
+    if(window.PlanBridge&&typeof window.PlanBridge.saveState==='function'){
+      window.PlanBridge.saveState(state,{filename:'Pladser-bibliotek.json'});
+      return true;
+    }
+    return postPlanBridge('SAVE_STATE',{
+      state,
+      filename:'Pladser-bibliotek.json'
+    });
+  }catch(err){
+    console.warn('Pladser-bibliotek kunne ikke synkroniseres til Plan 2.0',err);
+    return false;
+  }
+}
+
+function schedulePlanLibrarySync(delay=250){
+  if(applyingPlanLibraryState||!isEmbeddedInParent())return;
+  clearTimeout(planLibrarySyncTimer);
+  planLibrarySyncTimer=setTimeout(()=>syncLibraryToPlan(),delay);
+}
+
+async function mergePlanLibraryState(state){
+  if(!state||state.format!==PLADSER_PLAN_STATE_FORMAT||!Array.isArray(state.plans))return 0;
+
+  applyingPlanLibraryState=true;
+  try{
+    const local=await libraryGetAll();
+    const byId=new Map(local.map(record=>[String(record.id),record]));
+    let changed=0;
+
+    for(const incomingRaw of state.plans){
+      if(!incomingRaw||!incomingRaw.id||!incomingRaw.dataset)continue;
+
+      // Reject malformed/corrupt remote entries without breaking the rest.
+      try{validatePladserDataset(incomingRaw.dataset)}catch(err){
+        console.warn('Ignorerer ugyldig Pladser-post fra Plan',incomingRaw?.title,err);
+        continue;
+      }
+
+      const incoming={
+        ...incomingRaw,
+        id:String(incomingRaw.id),
+        title:String(incomingRaw.title||'Bordplan')
+      };
+      const current=byId.get(incoming.id);
+
+      // Merge, don't blindly replace:
+      // newest updatedAt wins for matching IDs; local-only plans are retained.
+      if(!current || String(incoming.updatedAt||'')>String(current.updatedAt||'')){
+        await libraryPut(incoming);
+        byId.set(incoming.id,incoming);
+        changed++;
+      }
+    }
+
+    planStateReceived=true;
+
+    if(document.getElementById('libraryModal')?.classList.contains('open')){
+      await renderLibrary();
+    }
+
+    return changed;
+  }finally{
+    applyingPlanLibraryState=false;
+  }
+}
+
+async function requestPlanLibraryState(){
+  if(!isEmbeddedInParent())return false;
+  try{
+    if(window.PlanBridge&&typeof window.PlanBridge.requestState==='function'){
+      window.PlanBridge.requestState();
+      return true;
+    }
+    return postPlanBridge('LOAD_STATE_REQUEST',{});
+  }catch(err){
+    console.warn('Kunne ikke anmode Plan 2.0 om Pladser-bibliotek',err);
+    return false;
+  }
+}
+
+function uid(){
+  try{return crypto.randomUUID()}catch(_){
+    return 'plads_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
+  }
+}
+function escapeHtml(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function prettyDate(iso){
+  if(!iso)return '';
+  try{
+    return new Intl.DateTimeFormat('da-DK',{dateStyle:'medium',timeStyle:'short'}).format(new Date(iso));
+  }catch(_){return iso}
+}
+function basisLabel(value){
+  const option=[...document.getElementById('basis').options].find(o=>o.value===value);
+  return option?.textContent||value||'';
+}
+function openLibraryModal(){
+  renderLibrary();
+  const modal=document.getElementById('libraryModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+}
+function closeLibraryModal(){
+  const modal=document.getElementById('libraryModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden','true');
+}
+async function renderLibrary(){
+  const host=document.getElementById('libraryList');
+  const count=document.getElementById('libraryCount');
+  try{
+    let plans=await libraryGetAll();
+    const sort=document.getElementById('librarySort')?.value||'updated-desc';
+
+    const compareText=(a,b)=>String(a||'').localeCompare(String(b||''),'da',{sensitivity:'base'});
+    plans=[...plans].sort((a,b)=>{
+      if(sort==='updated-asc') return String(a.updatedAt||'').localeCompare(String(b.updatedAt||''));
+      if(sort==='title-asc') return compareText(a.title,b.title);
+      if(sort==='basis-asc'){
+        const av=basisLabel(a.dataset?.settings?.basis);
+        const bv=basisLabel(b.dataset?.settings?.basis);
+        return compareText(av,bv)||compareText(a.title,b.title);
+      }
+      if(sort==='stamdata-asc'){
+        const av=a.dataset?.stamdata?.versionLabel||a.dataset?.stamdata?.source||'';
+        const bv=b.dataset?.stamdata?.versionLabel||b.dataset?.stamdata?.source||'';
+        return compareText(av,bv)||compareText(a.title,b.title);
+      }
+      return String(b.updatedAt||'').localeCompare(String(a.updatedAt||''));
+    });
+
+    count.textContent=`${plans.length} ${plans.length===1?'bordplan':'bordplaner'}`;
+    if(!plans.length){
+      host.innerHTML='<div class="library-empty"><strong>Ingen gemte bordplaner endnu.</strong><br>Brug “Gem bordplan”, når du vil gemme den aktuelle placering.</div>';
+      return;
+    }
+    host.innerHTML='<div class="library-list">'+plans.map(plan=>{
+      const data=plan.dataset||{};
+      const students=data.stamdata?.students?.length||0;
+      const basis=basisLabel(data.settings?.basis);
+      const stamVersion=data.stamdata?.versionLabel||data.stamdata?.source||'Ukendt stamdata';
+      const fingerprint=data.stamdata?.fingerprint?` · ${data.stamdata.fingerprint}`:'';
+      return `<div class="library-item" data-id="${escapeHtml(plan.id)}">
+        <button class="library-open" type="button" data-action="open">
+          <div class="library-title">${escapeHtml(plan.title)}</div>
+          <div class="library-meta">
+            ${escapeHtml(basis)} · ${students} elever · stamdata: ${escapeHtml(stamVersion)}${escapeHtml(fingerprint)} · gemt ${escapeHtml(prettyDate(plan.updatedAt))}
+          </div>
+        </button>
+        <div class="library-actions">
+          <button type="button" data-action="rename">Omdøb</button>
+          <button type="button" data-action="duplicate">Duplikér</button>
+          <button type="button" data-action="delete">Slet</button>
+        </div>
+      </div>`;
+    }).join('')+'</div>';
+  }catch(err){
+    host.innerHTML=`<div class="library-empty">Biblioteket kunne ikke åbnes: ${escapeHtml(err?.message||err)}</div>`;
+  }
+}
+async function savePlanToLibrary(title){
+  if(!students.length)throw new Error('Der er ingen stamdata at gemme endnu.');
+
+  const contextNow=currentPlanContext();
+  const signatureNow=contextSignature(contextNow);
+  const contextChanged=!!currentPlanId &&
+    (!currentPlanContextSignature || signatureNow!==currentPlanContextSignature);
+
+  const useExisting=!!currentPlanId && !contextChanged;
+
+  const now=new Date().toISOString();
+  const dataset=createPladserDataset();
+  const id=useExisting ? currentPlanId : uid();
+  const cleanTitle=String(title||'').trim()||suggestedPlanTitle();
+
+  let createdAt=now;
+  if(useExisting){
+    try{
+      const existing=await libraryGet(currentPlanId);
+      createdAt=existing?.createdAt||now;
+    }catch(err){
+      console.warn('Kunne ikke læse eksisterende metadata; bruger nyt createdAt.',err);
+    }
+  }
+
+  const record={
+    id,
+    title:cleanTitle,
+    createdAt,
+    updatedAt:now,
+    context:contextNow,
+    contextSignature:signatureNow,
+    dataset
+  };
+
+  await libraryPut(record);
+  schedulePlanLibrarySync();
+
+  currentPlanId=id;
+  currentPlanTitle=record.title;
+  currentPlanContextSignature=signatureNow;
+
+  saveWorkspaceNow().catch(err=>
+    console.warn('Workspace-checkpoint efter gemning mislykkedes',err)
+  );
+
+  showDistribution(useExisting
+    ? `“${record.title}” er opdateret i Bordplansbiblioteket.`
+    : `“${record.title}” er gemt som en ny bordplan.`);
+  return record;
+}
+function showSaveDialog(){
+  const dlg=document.getElementById('saveDialog');
+  const input=document.getElementById('savePlanTitle');
+  const title=document.getElementById('saveDialogTitle');
+  const confirm=document.getElementById('confirmSaveBtn');
+
+  title.textContent='Gem bordplan';
+  confirm.textContent='Gem';
+
+  input.value=(!currentPlanId||activePlanContextChanged())
+    ? suggestedPlanTitle()
+    : (currentPlanTitle||suggestedPlanTitle());
+
+  dlg.classList.add('open');
+  dlg.setAttribute('aria-hidden','false');
+  setTimeout(()=>{input.focus();input.select()},20);
+}
+function closeSaveDialog(){
+  const dlg=document.getElementById('saveDialog');
+  dlg.classList.remove('open');
+  dlg.setAttribute('aria-hidden','true');
+}
+async function loadLibraryPlan(id){
+  const record=await libraryGet(id);
+  if(!record)throw new Error('Bordplanen blev ikke fundet.');
+  loadPladserDataset(record.dataset);
+  currentPlanId=record.id;
+  currentPlanTitle=record.title;
+  currentPlanContextSignature=
+    record.contextSignature ||
+    contextSignature({
+      basis:record.dataset?.settings?.basis||'',
+      areaMappings:record.dataset?.settings?.areaMappings||{},
+      stamdataFingerprint:record.dataset?.stamdata?.fingerprint||''
+    });
+  await saveWorkspaceNow();
+  closeLibraryModal();
+  showDistribution(`“${record.title}” er åbnet.`);
+}
+async function renameLibraryPlan(id){
+  const record=await libraryGet(id);
+  if(!record)return;
+  const title=prompt('Nyt navn til bordplanen:',record.title);
+  if(title===null)return;
+  const clean=title.trim();
+  if(!clean)return;
+  record.title=clean;
+  record.updatedAt=new Date().toISOString();
+  await libraryPut(record);
+  schedulePlanLibrarySync();
+  if(currentPlanId===id)currentPlanTitle=clean;
+  await renderLibrary();
+}
+async function duplicateLibraryPlan(id){
+  const record=await libraryGet(id);
+  if(!record)return;
+  const now=new Date().toISOString();
+  await libraryPut({
+    ...record,
+    id:uid(),
+    title:`${record.title} – kopi`,
+    createdAt:now,
+    updatedAt:now,
+    dataset:(typeof structuredClone==='function') ? structuredClone(record.dataset) : JSON.parse(JSON.stringify(record.dataset))
+  });
+  schedulePlanLibrarySync();
+  await renderLibrary();
+}
+async function deleteLibraryPlan(id){
+  const record=await libraryGet(id);
+  if(!record)return;
+  if(!confirm(`Slet “${record.title}”?`))return;
+  await libraryDelete(id);
+  schedulePlanLibrarySync();
+  if(currentPlanId===id){currentPlanId=null;currentPlanTitle='';currentPlanContextSignature=''}
+  await renderLibrary();
+}
+async function exportLibraryBackup(){
+  if(!window.JSZip)throw new Error('ZIP-biblioteket kunne ikke indlæses.');
+  const plans=await libraryGetAll();
+  if(!plans.length)throw new Error('Der er ingen gemte bordplaner at tage backup af.');
+  const zip=new JSZip();
+  const manifest={
+    format:'pladser-library-backup',
+    formatVersion:1,
+    exportedAt:new Date().toISOString(),
+    count:plans.length,
+    plans:plans.map(p=>({
+      id:p.id,
+      title:p.title,
+      createdAt:p.createdAt,
+      updatedAt:p.updatedAt,
+      basis:p.dataset?.settings?.basis||'',
+      stamdataVersion:p.dataset?.stamdata?.versionLabel||p.dataset?.stamdata?.source||'',
+      stamdataFingerprint:p.dataset?.stamdata?.fingerprint||''
+    }))
+  };
+  zip.file('manifest.json',JSON.stringify(manifest,null,2));
+  const folder=zip.folder('bordplaner');
+  const used=new Set();
+  for(const p of plans){
+    let base=(p.title||'Bordplan').replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').trim()||'Bordplan';
+    let name=base+'.pladser.json',n=2;
+    while(used.has(name)){name=`${base} ${n++}.pladser.json`}
+    used.add(name);
+    folder.file(name,JSON.stringify({
+      library:{id:p.id,title:p.title,createdAt:p.createdAt,updatedAt:p.updatedAt},
+      dataset:p.dataset
+    },null,2));
+  }
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+  const stamp=new Date().toISOString().slice(0,10);
+  const filename=`Pladser-backup-${stamp}.zip`;
+  const file=typeof File==='function'?new File([blob],filename,{type:'application/zip'}):null;
+  if(file&&navigator.share&&navigator.canShare){
+    try{
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:'Pladser backup'});
+        return;
+      }
+    }catch(err){if(err?.name==='AbortError')return}
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+async function importLibraryBackup(file){
+  if(!window.JSZip)throw new Error('ZIP-biblioteket kunne ikke indlæses.');
+  const zip=await JSZip.loadAsync(file);
+  const manifestEntry=zip.file('manifest.json');
+  if(!manifestEntry)throw new Error('ZIP-filen er ikke en Pladser-backup.');
+  const manifest=JSON.parse(await manifestEntry.async('text'));
+  if(manifest.format!=='pladser-library-backup')throw new Error('ZIP-filen er ikke en Pladser-backup.');
+  const entries=Object.values(zip.files).filter(e=>!e.dir&&/^bordplaner\/.+\.pladser\.json$/i.test(e.name));
+  let imported=0;
+  for(const entry of entries){
+    const obj=JSON.parse(await entry.async('text'));
+    const data=obj.dataset||obj;
+    validatePladserDataset(data);
+    const lib=obj.library||{};
+    const now=new Date().toISOString();
+    await libraryPut({
+      id:uid(), // import creates new records; it never silently overwrites local plans
+      title:lib.title||entry.name.split('/').pop().replace(/\.pladser\.json$/i,''),
+      createdAt:lib.createdAt||now,
+      updatedAt:now,
+      dataset:data
+    });
+    imported++;
+  }
+  if(imported)schedulePlanLibrarySync();
+  return imported;
+}
+
+// Library events.
+document.getElementById('libraryBtn').addEventListener('click',openLibraryModal);
+document.getElementById('librarySort').addEventListener('change',renderLibrary);
+document.getElementById('closeLibraryBtn').addEventListener('click',closeLibraryModal);
+document.getElementById('libraryModal').addEventListener('click',e=>{
+  if(e.target.id==='libraryModal')closeLibraryModal();
+});
+document.getElementById('libraryList').addEventListener('click',async e=>{
+  const button=e.target.closest('button[data-action]');
+  if(!button)return;
+  const item=button.closest('.library-item');
+  const id=item?.dataset.id;
+  if(!id)return;
+  try{
+    if(button.dataset.action==='open')await loadLibraryPlan(id);
+    if(button.dataset.action==='rename')await renameLibraryPlan(id);
+    if(button.dataset.action==='duplicate')await duplicateLibraryPlan(id);
+    if(button.dataset.action==='delete')await deleteLibraryPlan(id);
+  }catch(err){alert(err?.message||String(err))}
+});
+
+document.getElementById('savePlanBtn').addEventListener('click',showSaveDialog);
+document.getElementById('cancelSaveBtn').addEventListener('click',closeSaveDialog);
+document.getElementById('confirmSaveBtn').addEventListener('click',async()=>{
+  const btn=document.getElementById('confirmSaveBtn');
+  const oldText=btn.textContent;
+  try{
+    btn.disabled=true;
+    btn.textContent='Gemmer…';
+    await savePlanToLibrary(
+      document.getElementById('savePlanTitle').value
+    );
+    closeSaveDialog();
+    if(document.getElementById('libraryModal').classList.contains('open'))await renderLibrary();
+  }catch(err){
+    const message=err?.message||String(err);
+    showDistribution('Kunne ikke gemme bordplanen: '+message,'bad');
+    alert(message);
+  }finally{
+    btn.disabled=false;
+    btn.textContent=oldText;
+  }
+});
+document.getElementById('savePlanTitle').addEventListener('keydown',e=>{
+  if(e.key==='Enter')document.getElementById('confirmSaveBtn').click();
+  if(e.key==='Escape')closeSaveDialog();
+});
+
+document.getElementById('exportBackupBtn').addEventListener('click',async()=>{
+  const btn=document.getElementById('exportBackupBtn');
+  try{btn.disabled=true;btn.textContent='Laver backup…';await exportLibraryBackup()}
+  catch(err){alert(err?.message||String(err))}
+  finally{btn.disabled=false;btn.textContent='Eksportér backup'}
+});
+document.getElementById('importBackupBtn').addEventListener('click',()=>document.getElementById('importBackupInput').click());
+document.getElementById('importBackupInput').addEventListener('change',async e=>{
+  const file=e.target.files?.[0];e.target.value='';
+  if(!file)return;
+  try{
+    const count=await importLibraryBackup(file);
+    await renderLibrary();
+    alert(`${count} bordplan${count===1?'':'er'} importeret.`);
+  }catch(err){alert(err?.message||String(err))}
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(document.getElementById('saveDialog').classList.contains('open'))closeSaveDialog();
+    else if(document.getElementById('libraryModal').classList.contains('open'))closeLibraryModal();
+  }
+});
+
 function buildPrintPreview(){
   const sheet=document.getElementById('printSheet');
   sheet.innerHTML='';
@@ -1246,7 +2348,31 @@ document.querySelector('.room').addEventListener('click',e=>{
   }
 });
 
+
+// Autosave af den aktuelle arbejdsstate. Biblioteksposter overskrives kun,
+// når brugeren aktivt vælger "Gem bordplan".
+document.addEventListener('change',e=>{
+  if(e.target.closest('#printModal,#libraryModal,#saveDialog'))return;
+  scheduleWorkspaceAutosave();
+});
+document.addEventListener('click',e=>{
+  if(e.target.closest('#printModal,#libraryModal,#saveDialog'))return;
+  if(e.target.closest('.table-group,#distributeBtn,#shuffleBtn,#clearBtn,#unlockBtn')) {
+    scheduleWorkspaceAutosave(650);
+  }
+});
+document.addEventListener('dblclick',e=>{
+  if(e.target.closest('.seat,.team-label'))scheduleWorkspaceAutosave(650);
+});
+window.addEventListener('pagehide',()=>{
+  if(students.length&&!workspaceAutosaveSuspended){
+    // Fire-and-forget; IndexedDB-transaktionen startes mens siden stadig er aktiv.
+    saveWorkspaceNow();
+  }
+});
+
 buildRoom();
+window.__pladserStartupRestore=restoreWorkspaceOnStartup();
 
 const sidebarToggle=document.getElementById('sidebarToggle');
 const mainApp=document.getElementById('mainApp');
@@ -1301,6 +2427,24 @@ try{
   window.addEventListener('message',ev=>{
     const msg=ev&&ev.data;
     if(!msg)return;
+
+    if(msg.protocol==='plan-htmlapp-v1'&&msg.type==='LOAD_STATE'){
+      const payload=msg.payload||{};
+      const state=payload.state??msg.state??null;
+      if(state){
+        mergePlanLibraryState(state).catch(err=>
+          console.warn('Pladser kunne ikke indlæse bibliotek fra Plan 2.0',err)
+        );
+      }else{
+        planStateReceived=true;
+      }
+      return;
+    }
+
+    if(msg.protocol==='plan-htmlapp-v1'&&msg.type==='SAVE_STATE_ERROR'){
+      console.warn('Plan 2.0 kunne ikke gemme Pladser-biblioteket',msg.payload?.message||msg.error||msg);
+      return;
+    }
     if(msg.type==='PLADSER_STAMDATA_ERROR'||(msg.protocol==='plan-htmlapp-v1'&&msg.type==='STAMDATA_ERROR')){
       document.getElementById('stamdataDetails').setAttribute('open','');
       document.getElementById('stamdataSummary').textContent='– vælg regneark';
@@ -1312,6 +2456,8 @@ try{
     if(!incoming||!incoming.length)return;
 
     students=incoming;
+    stamdataSource='Plan 2.0';
+    currentPlanId=null;currentPlanTitle='';currentPlanContextSignature='';
     uniqueGroups=[...new Set(students.flatMap(s=>s.groups))].sort((a,b)=>a.localeCompare(b,'da'));
     groupTypes={};uniqueGroups.forEach(g=>groupTypes[g]=detectType(g));
     renderGroupClassification();
@@ -1320,6 +2466,7 @@ try{
     showImport(`${students.length} elever indlæst fra Plan 2.0.`);
     document.getElementById('stamdataSummary').textContent=`· ${students.length} elever fra Plan 2.0 ✓`;
     document.getElementById('stamdataDetails').removeAttribute('open');
+    scheduleWorkspaceAutosave(150);
   });
 
   if(embedded){
@@ -1330,8 +2477,23 @@ try{
         accepts:['PLADSER_STAMDATA','PLAN2_STAMDATA','TAVLE_STAMDATA'],
         fields:['Fornavn','Efternavn','Grupper','Studenthouse']
       },'*');
-      const requestId='pladser_data_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
-      window.parent.postMessage({protocol:'plan-htmlapp-v1',app:'pladser',type:'STAMDATA_REQUEST',requestId,payload:{fields:['Fornavn','Efternavn','Grupper','Studenthouse']}},'*');
+
+      // Plan 2.0 already has a generic app-state bridge. Ask for the
+      // widget's persisted Pladser library; local IndexedDB remains usable
+      // standalone and is merged with the Plan copy when present.
+      setTimeout(()=>requestPlanLibraryState(),0);
+
+      Promise.resolve(window.__pladserStartupRestore).then(restored=>{
+        if(restored)return;
+        const requestId='pladser_data_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+        window.parent.postMessage({
+          protocol:'plan-htmlapp-v1',
+          app:'pladser',
+          type:'STAMDATA_REQUEST',
+          requestId,
+          payload:{fields:['Fornavn','Efternavn','Grupper','Studenthouse']}
+        },'*');
+      });
     }catch(_){}
   }
 })();
