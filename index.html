@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Pladser – prototype v9.0</title>
+  <title>Pladser – prototype v10.0</title>
 
   <!-- SheetJS bruges kun til at læse regnearket i browseren. Elevdata uploades ikke. -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -21,6 +21,24 @@
     header{padding:16px 20px;background:var(--dark);color:white;display:flex;justify-content:space-between;align-items:center;gap:16px}
     header h1{font-size:20px;margin:0}
     header small{opacity:.8}
+    .header-actions{display:flex;align-items:center;gap:12px;font-weight:700}
+    .header-print{background:white;color:var(--dark);border-color:white;font-weight:750;padding:8px 12px}
+    .facelift-panel{display:flex;flex-direction:column;gap:10px}
+    .workflow-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
+    .workflow-card h2{font-size:18px;margin-bottom:12px}
+    .distribute-main{width:100%;margin-top:12px;padding:12px 14px;font-weight:800;font-size:15px}
+    .secondary-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+    .compact-status{margin-top:10px}
+    .settings-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+    .settings-card > summary{list-style:none;cursor:pointer;padding:11px 12px;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .settings-card > summary::-webkit-details-marker{display:none}
+    .settings-card > summary::after{content:"›";font-size:20px;line-height:1;transform:rotate(90deg);transition:transform .15s ease;color:var(--muted)}
+    .settings-card[open] > summary::after{transform:rotate(-90deg)}
+    .settings-card > summary span{font-size:11px;font-weight:600;color:var(--muted);margin-left:auto}
+    .settings-body{padding:0 12px 12px;border-top:1px solid #eef0f3}
+    .settings-section h3{margin-top:12px}
+    .settings-section + .settings-section{border-top:1px solid #eef0f3;margin-top:12px;padding-top:1px}
+    .control-card .counts{margin-top:12px}
     .app{display:grid;grid-template-columns:390px minmax(0,1fr);gap:14px;padding:14px;transition:grid-template-columns .18s ease}
     .app.sidebar-hidden{grid-template-columns:0 minmax(0,1fr);gap:0}
     .app.sidebar-hidden aside{
@@ -261,66 +279,86 @@
 <body>
 <header>
   <div><h1>Pladser</h1><small>Regnearksimport · gruppefordeling på 3 borde · hele bordområder som klikzoner</small></div>
-  <div id="capacity">0 / 180 pladser</div>
+  <div class="header-actions">
+    <div id="capacity">0 / 180 pladser</div>
+    <button id="printBtn" class="header-print" type="button">Print / PDF</button>
+  </div>
 </header>
 
 <button id="sidebarToggle" class="sidebar-toggle" type="button"
   aria-expanded="true" aria-controls="controlPanel" title="Skjul sidepanel">‹</button>
 <div id="mainApp" class="app">
-  <aside id="controlPanel" class="panel">
-    <h2>1. Importér regneark</h2>
-    <input id="fileInput" type="file" accept=".xlsx,.xls,.csv">
-    <div class="note">Forventede kolonner: <b>Fornavn</b>, <b>Efternavn</b>, <b>Grupper</b> og <b>Studenthouse</b>. Grupper må gerne stå på flere linjer i samme celle.</div>
-    <div id="importStatus" class="status">Intet regneark indlæst.</div>
+  <aside id="controlPanel" class="panel facelift-panel">
+    <details id="stamdataDetails" class="settings-card" open>
+      <summary>Stamdata <span id="stamdataSummary">– vælg regneark</span></summary>
+      <div class="settings-body">
+        <input id="fileInput" type="file" accept=".xlsx,.xls,.csv">
+        <div class="note">Forventede kolonner: <b>Fornavn</b>, <b>Efternavn</b>, <b>Grupper</b> og <b>Studenthouse</b>. Grupper må gerne stå på flere linjer i samme celle.</div>
+        <div id="importStatus" class="status">Intet regneark indlæst.</div>
+      </div>
+    </details>
 
     <section id="analysisSection" class="hidden">
-      <h3>2. Klassificér grupper</h3>
-      <div class="note">Teams og rejsehold genkendes automatisk. Andre gruppenavne kan markeres som profilfag eller valgfag.</div>
-      <div id="groupList" class="group-list"></div>
+      <div class="workflow-card">
+        <h2>Fordel elever</h2>
 
-      <h3>3. Vælg fordelingsgrundlag</h3>
-      <label for="basis">Gruppetype</label>
-      <select id="basis">
-        <option value="team">Teams</option>
-        <option value="studenthouse">Gange / Studenthouse</option>
-        <option value="profilfag">Profilfag</option>
-        <option value="rejsehold">Rejsehold</option>
-        <option value="valgfag">Valgfag</option>
-      </select>
+        <label for="basis">Fordelingsgrundlag</label>
+        <select id="basis">
+          <option value="team">Teams</option>
+          <option value="studenthouse">Gange / Studenthouse</option>
+          <option value="profilfag">Linjefag</option>
+          <option value="rejsehold">Rejsehold</option>
+          <option value="valgfag">Valgfag</option>
+        </select>
 
-      <label for="strategy">Fordeling inden for gruppens 3 borde</label>
-      <select id="strategy">
-        <option value="balanced">Jævn fordeling på gruppens 3 borde</option>
-        <option value="randomWithinGroup">Tilfældig fordeling på gruppens 3 borde</option>
-      </select>
+        <label for="strategy">Fordeling på gruppens 3 borde</label>
+        <select id="strategy">
+          <option value="balanced">Jævn fordeling på gruppens 3 borde</option>
+          <option value="randomWithinGroup">Tilfældig fordeling på gruppens 3 borde</option>
+        </select>
 
-      <div id="basisStatus" class="status"></div>
+        <div id="basisStatus" class="status compact-status"></div>
 
-      <div id="mappingSection">
-        <h3>4. Knyt grupper til bordområder</h3>
-        <div class="note">Hvert område består af tre borde og højst 30 pladser.</div>
-        <div id="mapping" class="mapping"></div>
+        <button id="distributeBtn" class="primary distribute-main">Fordel elever</button>
+
+        <div class="secondary-actions">
+          <button id="shuffleBtn">Bland ulåste</button>
+          <button id="clearBtn">Ryd pladser</button>
+        </div>
       </div>
 
-      <div class="row">
-        <button id="distributeBtn" class="primary">Fordel elever</button>
-        <button id="shuffleBtn">Bland ulåste</button>
-        <button id="clearBtn">Ryd pladser</button>
-      </div>
-      <div class="row">
-        <button id="lockBtn">Lås udfyldte</button>
-        <button id="unlockBtn">Lås alle op</button>
-        <button id="printBtn">Print / PDF</button>
-      </div>
+      <details id="settingsDetails" class="settings-card">
+        <summary>Indstillinger</summary>
+        <div class="settings-body">
+          <section class="settings-section">
+            <h3>Klassificér grupper</h3>
+            <div class="note">Teams og rejsehold genkendes automatisk. Andre gruppenavne kan markeres som linjefag eller valgfag.</div>
+            <div id="groupList" class="group-list"></div>
+          </section>
 
-      <h3>Kontrol</h3>
-      <div id="counts" class="counts"></div>
-      <div id="distributionStatus" class="status">Ingen fordeling udført.</div>
-      <div class="note">
-        Klik på et elevnavn for at bytte elever. Navnefelterne udvider sig automatisk efter navnets længde.
-        Klik på selve bordfladen for at vælge et bord, og klik derefter på et andet bord for at bytte deres placering.
-        Klik på gruppetitlen over bordet for at låse eller låse alle elevplaceringer ved bordet op.
-      </div>
+          <section id="mappingSection" class="settings-section">
+            <h3>Knyt grupper til bordområder</h3>
+            <div class="note">Hvert område består af tre borde og højst 30 pladser.</div>
+            <div id="mapping" class="mapping"></div>
+          </section>
+        </div>
+      </details>
+
+      <details class="settings-card control-card">
+        <summary>Kontrol og låsninger</summary>
+        <div class="settings-body">
+          <div id="counts" class="counts"></div>
+          <div id="distributionStatus" class="status">Ingen fordeling udført.</div>
+          <div class="row">
+            <button id="unlockBtn">Lås alle op</button>
+          </div>
+          <div class="note">
+            Klik på et elevnavn for at bytte elever. Navnefelterne udvider sig automatisk efter navnets længde.
+            Klik på selve bordfladen for at vælge et bord, og klik derefter på et andet bord for at bytte deres placering.
+            Klik på gruppetitlen over bordet for at låse eller låse alle elevplaceringer ved bordet op.
+          </div>
+        </div>
+      </details>
     </section>
   </aside>
 
@@ -585,7 +623,7 @@ function renderGroupClassification(){
     const row=document.createElement('div');row.className='group-row';
     const span=document.createElement('span');span.textContent=group;span.title=group;
     const select=document.createElement('select');
-    [['ukendt','Ukendt'],['team','Team'],['profilfag','Profilfag'],['rejsehold','Rejsehold'],['valgfag','Valgfag']]
+    [['ukendt','Ukendt'],['team','Team'],['profilfag','Linjefag'],['rejsehold','Rejsehold'],['valgfag','Valgfag']]
       .forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;select.appendChild(o)});
     select.value=groupTypes[group];
     select.addEventListener('change',()=>{groupTypes[group]=select.value;refreshBasis()});
@@ -612,6 +650,22 @@ function refreshBasis(){
   renderMapping(groups);
   renderCounts(groups,basis);
 }
+
+function updateAreaTableTitles(){
+  const selectedByArea={};
+
+  document.querySelectorAll('#mapping select[data-area]').forEach(sel=>{
+    selectedByArea[Number(sel.dataset.area)]=sel.value||`Område ${sel.dataset.area}`;
+  });
+
+  document.querySelectorAll('.table[data-area]').forEach(table=>{
+    const area=Number(table.dataset.area);
+    const wrap=table.closest('.table-group');
+    const label=wrap?.querySelector('.team-label');
+    if(label) label.textContent=selectedByArea[area]||`Område ${area}`;
+  });
+}
+
 function renderMapping(groups){
   const map=document.getElementById('mapping');map.innerHTML='';
   document.getElementById('mappingSection').classList.remove('hidden');
@@ -625,8 +679,12 @@ function renderMapping(groups){
     const teamDefault=`Team ${area}`;
     if(groups.includes(teamDefault))sel.value=teamDefault;
     else if(groups[area-1])sel.value=groups[area-1];
+
+    sel.addEventListener('change',updateAreaTableTitles);
     row.append(label,sel);map.appendChild(row);
   }
+
+  updateAreaTableTitles();
 }
 function renderCounts(groups,basis){
   const box=document.getElementById('counts');box.innerHTML='';
@@ -829,8 +887,12 @@ document.getElementById('fileInput').addEventListener('change',async e=>{
     document.getElementById('analysisSection').classList.remove('hidden');
     refreshBasis();
     showImport(`${students.length} elever og ${uniqueGroups.length} forskellige gruppenavne indlæst.`);
+    document.getElementById('stamdataSummary').textContent=`· ${students.length} elever ✓`;
+    document.getElementById('stamdataDetails').removeAttribute('open');
   }catch(err){
     students=[];document.getElementById('analysisSection').classList.add('hidden');
+    document.getElementById('stamdataDetails').setAttribute('open','');
+    document.getElementById('stamdataSummary').textContent='– importfejl';
     showImport(err.message,'bad');
   }
 });
@@ -843,7 +905,6 @@ document.getElementById('shuffleBtn').addEventListener('click',()=>{
   const target=seats.filter(s=>s.dataset.locked!=='true');target.forEach(s=>setSeat(s,null));
   shuffled(filled).forEach((student,i)=>setSeat(target[i],student));updateCapacity();showDistribution('Ulåste elever er blandet.');
 });
-document.getElementById('lockBtn').addEventListener('click',()=>{seats.filter(s=>!s.classList.contains('empty')).forEach(s=>{s.dataset.locked='true';s.classList.add('locked')});showDistribution('Alle udfyldte pladser er låst.')});
 document.getElementById('unlockBtn').addEventListener('click',()=>{seats.forEach(s=>{s.dataset.locked='false';s.classList.remove('locked')});showDistribution('Alle pladser er låst op.')});
 function buildPrintPreview(){
   const sheet=document.getElementById('printSheet');
@@ -937,8 +998,11 @@ function buildVectorPdf(){
   pdf.setDrawColor(25,25,25);pdf.setLineWidth(.45);
   pdf.rect(margin,margin,usableW,usableH);
 
-  const colGap=2.5,rowGap=5,rightServiceW=44;
-  const gridW=usableW-rightServiceW-5;
+  // Hele A3-bredden bruges til de syv kolonner i øverste og nederste række.
+  // Midterrækkens fire borde bruger de samme kolonnepositioner, så de fortsat
+  // flugter lodret med de første fire kolonner.
+  const colGap=2,rowGap=5;
+  const gridW=usableW-4;
   const colW=(gridW-colGap*6)/7;
   const rowH=(usableH-rowGap*2)/3;
 
@@ -1010,15 +1074,20 @@ function buildVectorPdf(){
     }
   }
 
-  const serviceX=margin+usableW-rightServiceW;
-  const cx=serviceX+rightServiceW/2,cy=pageH/2;
+  // Buffetområdet bruger kun den ledige del til højre for midterrækkens
+  // fjerde kolonne. Det reducerer ikke længere bredden på de øvrige rækker.
+  const serviceX=margin+2+4*(colW+colGap)+5;
+  const serviceRight=margin+usableW-3;
+  const serviceW=serviceRight-serviceX;
+  const cx=serviceX+serviceW/2,cy=pageH/2;
+  const buffetRadius=Math.min(16,Math.max(12,(serviceW-12)/2));
   pdf.setFillColor(247,234,212);pdf.setDrawColor(30,30,30);
-  pdf.circle(cx,cy,16,'FD');
+  pdf.circle(cx,cy,buffetRadius,'FD');
   pdf.setFont('helvetica','bold');pdf.setFontSize(7);pdf.setTextColor(0,0,0);
   pdf.text(['ANRETTERBORD','/ BUFFET'],cx,cy-1.5,{align:'center'});
   pdf.setLineWidth(.5);
-  pdf.line(serviceX+5,cy-27,serviceX+rightServiceW-3,cy-27);
-  pdf.line(serviceX+5,cy+27,serviceX+rightServiceW-3,cy+27);
+  pdf.line(serviceX+5,cy-27,serviceRight,cy-27);
+  pdf.line(serviceX+5,cy+27,serviceRight,cy+27);
 
   const stamp=new Date().toISOString().slice(0,10);
   __lastPdfFilename=`${pdfSafeName('Pladser')}-${stamp}.pdf`;
@@ -1210,22 +1279,35 @@ try{
   function normalizeIncomingStudents(payload){
     const rows=payload?.students||payload?.elever||payload?.rows||payload?.data;
     if(!Array.isArray(rows)) return null;
-    return rows.map((r,i)=>({
-      id:String(r.id||r.unilogin||i+1),
-      firstName:String(r.fornavn||r.firstName||'').trim(),
-      lastName:String(r.efternavn||r.lastName||'').trim(),
-      name:String(r.navn||r.name||`${r.fornavn||''} ${r.efternavn||''}`).trim(),
-      groups:Array.isArray(r.grupper||r.groups)
-        ? (r.grupper||r.groups).map(String)
-        : splitGroups(r.grupper||r.groups||''),
-      studenthouse:String(r.studenthouse||r.gang||'').trim()
-    })).filter(s=>s.name);
+    const key=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+    const value=(row,aliases)=>{const wanted=new Set(aliases.map(key));for(const [name,v] of Object.entries(row||{}))if(wanted.has(key(name)))return v;return '';};
+    return rows.map((r,i)=>{
+      const firstName=String(value(r,['fornavn','firstName','first name'])||'').trim();
+      const lastName=String(value(r,['efternavn','lastName','last name'])||'').trim();
+      const rawGroups=value(r,['grupper','groups','elevgrupper']);
+      return {
+        id:String(value(r,['id','unilogin','elevid','studentid'])||i+1),
+        firstName,
+        lastName,
+        name:String(value(r,['navn','name','fulde navn','elevnavn'])||`${firstName} ${lastName}`).trim(),
+        groups:Array.isArray(rawGroups)
+          ? rawGroups.map(String).map(x=>x.trim()).filter(Boolean)
+          : String(rawGroups||'').split(/\r?\n|;\s*/).map(x=>x.trim()).filter(Boolean),
+        studenthouse:String(value(r,['studenthouse','student house','gang'])||'').trim()
+      };
+    }).filter(s=>s.name);
   }
 
   window.addEventListener('message',ev=>{
     const msg=ev&&ev.data;
     if(!msg)return;
-    if(!['PLADSER_STAMDATA','PLAN2_STAMDATA','TAVLE_STAMDATA'].includes(msg.type))return;
+    if(msg.type==='PLADSER_STAMDATA_ERROR'||(msg.protocol==='plan-htmlapp-v1'&&msg.type==='STAMDATA_ERROR')){
+      document.getElementById('stamdataDetails').setAttribute('open','');
+      document.getElementById('stamdataSummary').textContent='– vælg regneark';
+      showImport(msg.error||msg.payload?.message||'Plan 2.0 kunne ikke levere stamdata. Vælg et regneark herunder.','bad');
+      return;
+    }
+    if(!['PLADSER_STAMDATA','PLAN2_STAMDATA','TAVLE_STAMDATA','STAMDATA_RESPONSE'].includes(msg.type))return;
     const incoming=normalizeIncomingStudents(msg.payload||msg);
     if(!incoming||!incoming.length)return;
 
@@ -1236,6 +1318,8 @@ try{
     document.getElementById('analysisSection').classList.remove('hidden');
     refreshBasis();
     showImport(`${students.length} elever indlæst fra Plan 2.0.`);
+    document.getElementById('stamdataSummary').textContent=`· ${students.length} elever fra Plan 2.0 ✓`;
+    document.getElementById('stamdataDetails').removeAttribute('open');
   });
 
   if(embedded){
@@ -1246,7 +1330,8 @@ try{
         accepts:['PLADSER_STAMDATA','PLAN2_STAMDATA','TAVLE_STAMDATA'],
         fields:['Fornavn','Efternavn','Grupper','Studenthouse']
       },'*');
-      window.parent.postMessage({type:'PLADSER_STAMDATA_REQUEST',source:'Pladser'},'*');
+      const requestId='pladser_data_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+      window.parent.postMessage({protocol:'plan-htmlapp-v1',app:'pladser',type:'STAMDATA_REQUEST',requestId,payload:{fields:['Fornavn','Efternavn','Grupper','Studenthouse']}},'*');
     }catch(_){}
   }
 })();
