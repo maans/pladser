@@ -312,25 +312,30 @@
       flex:1;min-height:0;background:#d9dde5;border-radius:0 0 12px 12px;
       overflow:auto;padding:14px;display:flex;justify-content:center;align-items:center;
     }
+    /* Previewet bruger det faktiske A3-printlayout. Kun hele arket skaleres
+       til skærmen; ingen mål eller typografi genberegnes til preview. */
+    .print-stage{position:relative;flex:0 0 auto}
     .print-sheet{
-      width:min(100%, calc((100vh - 125px) * 1.4142));
-      aspect-ratio:420 / 297;
+      width:420mm;height:297mm;aspect-ratio:auto;
       background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.22);
       position:relative;overflow:hidden;
+      transform:scale(var(--print-preview-scale,1));
+      transform-origin:top left;
     }
     .print-sheet .room{
-      position:absolute;inset:1.8%;
-      width:auto;height:auto;min-width:0;min-height:0;
+      position:absolute!important;left:5mm!important;top:5mm!important;
+      width:410mm!important;height:287mm!important;
+      inset:auto!important;min-width:0;min-height:0;
       transform:none!important;transform-origin:initial!important;
-      overflow:hidden;padding:1.7% 1.3%;
-      border-width:2px;
+      overflow:hidden;padding:4mm 3mm!important;
+      border:1.5px solid #111!important;
     }
     .print-sheet .grid{
-      width:100%;height:100%;
+      width:100%!important;height:100%!important;
       display:grid;
-      grid-template-columns:repeat(8,minmax(0,1fr));
-      grid-template-rows:repeat(3,minmax(0,1fr));
-      gap:1.6% .7%;
+      grid-template-columns:repeat(8,minmax(0,1fr))!important;
+      grid-template-rows:repeat(3,minmax(0,1fr))!important;
+      gap:4mm 2mm!important;
       transform:none!important;
       align-items:stretch;
     }
@@ -348,9 +353,9 @@
     .print-sheet .seat{
       width:230%!important;min-width:0!important;max-width:none!important;
       height:12.3%!important;
-      font-size:10.2px!important;
+      font-size:8.1pt!important;
       font-weight:700!important;
-      letter-spacing:-.08px!important;
+      letter-spacing:-.05pt!important;
       line-height:1!important;
       padding:0!important;
       color:#000!important;
@@ -409,9 +414,11 @@
       .print-preview-shell{
         display:block!important;background:#fff!important;padding:0!important;overflow:visible!important;
       }
+      .print-stage{width:420mm!important;height:297mm!important}
       .print-sheet{
         width:420mm!important;height:297mm!important;aspect-ratio:auto!important;
         box-shadow:none!important;margin:0!important;overflow:hidden!important;
+        transform:none!important;
       }
       .print-sheet .room{
         position:absolute!important;left:5mm!important;top:5mm!important;
@@ -722,8 +729,10 @@
       <button id="confirmPrint" class="primary">Gem / del PDF</button>
     </div>
   </div>
-  <div class="print-preview-shell">
-    <div id="printSheet" class="print-sheet"></div>
+  <div id="printPreviewShell" class="print-preview-shell">
+    <div id="printStage" class="print-stage">
+      <div id="printSheet" class="print-sheet"></div>
+    </div>
   </div>
 </div>
 
@@ -3368,6 +3377,20 @@ function buildPrintPreview(){
   sheet.appendChild(room);
 }
 
+function scalePrintPreview(){
+  const shell=document.getElementById('printPreviewShell');
+  const stage=document.getElementById('printStage');
+  const sheet=document.getElementById('printSheet');
+  if(!shell||!stage||!sheet)return;
+  sheet.style.setProperty('--print-preview-scale','1');
+  const availableW=Math.max(1,shell.clientWidth-28);
+  const availableH=Math.max(1,shell.clientHeight-28);
+  const scale=Math.min(1,availableW/sheet.offsetWidth,availableH/sheet.offsetHeight);
+  sheet.style.setProperty('--print-preview-scale',String(scale));
+  stage.style.width=`${Math.ceil(sheet.offsetWidth*scale)}px`;
+  stage.style.height=`${Math.ceil(sheet.offsetHeight*scale)}px`;
+}
+
 function openPrintPreview(){
   buildPrintPreview();
   const modal=document.getElementById('printModal');
@@ -3375,6 +3398,7 @@ function openPrintPreview(){
   modal.setAttribute('aria-hidden','false');
   document.body.style.overflow='hidden';
   document.body.classList.add('print-preview-open');
+  requestAnimationFrame(scalePrintPreview);
 }
 
 function closePrintPreview(){
@@ -3394,6 +3418,9 @@ function closePrintPreview(){
 
 document.getElementById('printBtn').addEventListener('click',openPrintPreview);
 document.getElementById('closePrintPreview').addEventListener('click',closePrintPreview);
+window.addEventListener('resize',()=>{
+  if(document.getElementById('printModal').classList.contains('open'))scalePrintPreview();
+});
 
 
 let __lastPdfBlob=null;
@@ -3684,7 +3711,8 @@ function openCleanPrintWindow(){
       .print-modal{display:block!important;position:static!important;padding:0!important;background:#fff!important}
       .print-toolbar{display:none!important}
       .print-preview-shell{display:block!important;padding:0!important;background:#fff!important;overflow:visible!important}
-      .print-sheet{width:420mm!important;height:297mm!important;box-shadow:none!important}
+      .print-stage{width:420mm!important;height:297mm!important}
+      .print-sheet{width:420mm!important;height:297mm!important;box-shadow:none!important;transform:none!important}
       @page{size:A3 landscape;margin:0}
     </style>
   </head>
