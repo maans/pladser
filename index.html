@@ -452,6 +452,10 @@
         <input id="fileInput" type="file" accept=".xlsx,.xls,.csv">
         <div class="note">Forventede kolonner: <b>Fornavn</b>, <b>Efternavn</b>, <b>Grupper</b> og <b>Studenthouse</b>. Køn læses både fra den valgfrie <b>Køn</b>-kolonne og fra grupper som <b>Drenge 26</b>/<b>Piger 26</b>. Grupper må gerne stå på flere linjer i samme celle.</div>
         <div id="importStatus" class="status">Intet regneark indlæst.</div>
+        <div class="row">
+          <button id="resetWorkspaceBtn" type="button">Nulstil arbejdsstate</button>
+        </div>
+        <div class="note">Nulstilling sletter kun den aktuelle autosavede arbejdssession. Gemte bordplaner og deres tilknyttede stamdata bevares.</div>
       </div>
     </details>
 
@@ -1913,6 +1917,10 @@ function distribute(randomizeTies=false){
 
 document.getElementById('fileInput').addEventListener('change',async e=>{
   const file=e.target.files[0];if(!file)return;
+  const previousState={
+    students,uniqueGroups,groupTypes,stamdataSource,
+    currentPlanId,currentPlanTitle,currentPlanContextSignature
+  };
   showImport('Læser regnearket…');
   try{
     const rows=await readFile(file);importRows(rows);stamdataSource=file.name||'Regneark';currentPlanId=null;currentPlanTitle='';currentPlanContextSignature='';renderGroupClassification();
@@ -1921,13 +1929,20 @@ document.getElementById('fileInput').addEventListener('change',async e=>{
     updateRuleDataStatus();
     showImport(`${students.length} elever og ${uniqueGroups.length} forskellige gruppenavne indlæst${students.some(s=>resolvedGender(s).value)?' · kønsdata fundet':''}.`);
     document.getElementById('stamdataSummary').textContent=`· ${students.length} elever ✓`;
-    document.getElementById('stamdataDetails').removeAttribute('open');
+    document.getElementById('stamdataDetails').setAttribute('open','');
     scheduleWorkspaceAutosave(150);
   }catch(err){
-    students=[];document.getElementById('analysisSection').classList.add('hidden');
+    ({students,uniqueGroups,groupTypes,stamdataSource,currentPlanId,currentPlanTitle,currentPlanContextSignature}=previousState);
+    renderGroupClassification();
+    if(students.length)refreshBasis();
     document.getElementById('stamdataDetails').setAttribute('open','');
-    document.getElementById('stamdataSummary').textContent='– importfejl';
-    showImport(err.message,'bad');
+    document.getElementById('stamdataSummary').textContent=students.length
+      ? `· ${students.length} elever · ny import fejlede`
+      : '– importfejl';
+    document.getElementById('analysisSection').classList.toggle('hidden',!students.length);
+    showImport(`Importen blev ikke anvendt: ${err.message}`,'bad');
+  }finally{
+    e.target.value='';
   }
 });
 document.getElementById('basis').addEventListener('change',refreshBasis);
@@ -2263,15 +2278,42 @@ function validatePladserDataset(data){
 }
 
 function restorePhysicalTablePositions(positionMap){
-  if(!positionMap||typeof positionMap!=='object')return;
   const posClasses=[...Array.from({length:8},(_,i)=>`top${i+1}`),...Array.from({length:8},(_,i)=>`mid${i+1}`),...Array.from({length:8},(_,i)=>`bot${i+1}`)];
-  document.querySelectorAll('.table').forEach(table=>{
-    const wanted=positionMap[table.dataset.table];
+  const tables=[...document.querySelectorAll('.table')];
+  const expectedById=new Map(layout.map(item=>[item.id,item.cls]));
+  const expectedIds=[...expectedById.keys()];
+  const resetToStandard=()=>{
+    tables.forEach(table=>{
+      const wrap=table.closest('.table-group');
+      const standard=expectedById.get(table.dataset.table);
+      if(!wrap||!standard)return;
+      posClasses.forEach(c=>wrap.classList.remove(c));
+      wrap.classList.add(standard);
+    });
+  };
+  const keys=positionMap&&typeof positionMap==='object'&&!Array.isArray(positionMap)
+    ? Object.keys(positionMap)
+    : [];
+  const positions=expectedIds.map(id=>positionMap?.[id]);
+  const valid=
+    tables.length===expectedIds.length &&
+    keys.length===expectedIds.length &&
+    expectedIds.every(id=>Object.prototype.hasOwnProperty.call(positionMap,id)) &&
+    positions.every(pos=>typeof pos==='string'&&posClasses.includes(pos)) &&
+    new Set(positions).size===posClasses.length;
+
+  if(!valid){
+    resetToStandard();
+    return false;
+  }
+
+  tables.forEach(table=>{
     const wrap=table.closest('.table-group');
-    if(!wanted||!wrap||!posClasses.includes(wanted))return;
+    const wanted=positionMap[table.dataset.table];
     posClasses.forEach(c=>wrap.classList.remove(c));
     wrap.classList.add(wanted);
   });
+  return true;
 }
 
 function restoreAreaMappings(areaMappings){
@@ -2407,7 +2449,8 @@ function loadPladserDataset(data){
   // Nyere datasæt gemmer den konkrete bord->gruppe-kobling.
   // Ældre datasæt falder tilbage til deres gamle area-data.
   restoreTableAssignments(data.room?.tableAssignments);
-  restorePhysicalTablePositions(data.room?.tablePositions);
+  const physicalPositionsRestored=restorePhysicalTablePositions(data.room?.tablePositions);
+  applyRowLayout();
   restoreAssignedTablePresentation();
   restoreSeatsFromDataset(data.room.seats);
   restoreTableLocks(data.room?.tableLocks);
@@ -2415,9 +2458,14 @@ function loadPladserDataset(data){
 
   document.getElementById('stamdataSummary').textContent=
     `· ${students.length} elever fra bordplan ✓`;
-  document.getElementById('stamdataDetails').removeAttribute('open');
+  document.getElementById('stamdataDetails').setAttribute('open','');
 
-  showImport(`${students.length} elever indlæst fra gemt Pladser-bordplan.`);
+  showImport(
+    physicalPositionsRestored
+      ? `${students.length} elever indlæst fra gemt Pladser-bordplan.`
+      : `${students.length} elever indlæst. En ugyldig gemt bordplacering blev nulstillet til standardlayoutet.`,
+    physicalPositionsRestored?'':'warn'
+  );
 
   selected=null;
   selectedTable=null;
@@ -2604,6 +2652,18 @@ async function stateGet(key){
       const req=db.transaction(PLADSER_STATE_STORE,'readonly').objectStore(PLADSER_STATE_STORE).get(key);
       req.onsuccess=()=>{const value=req.result;db.close();resolve(value)};
       req.onerror=()=>{const err=req.error;db.close();reject(err)};
+    }catch(err){try{db.close()}catch(_){}reject(err)}
+  });
+}
+async function stateDelete(key){
+  const db=await openWorkspaceDb();
+  return new Promise((resolve,reject)=>{
+    try{
+      const tx=db.transaction(PLADSER_STATE_STORE,'readwrite');
+      tx.objectStore(PLADSER_STATE_STORE).delete(key);
+      tx.oncomplete=()=>{db.close();resolve()};
+      tx.onerror=()=>{const err=tx.error;db.close();reject(err)};
+      tx.onabort=()=>{const err=tx.error;db.close();reject(err)};
     }catch(err){try{db.close()}catch(_){}reject(err)}
   });
 }
@@ -3686,6 +3746,19 @@ window.addEventListener('pagehide',()=>{
 ['row1Count','row2Count','row3Count'].forEach(id=>{
   document.getElementById(id)?.addEventListener('change',()=>{applyRowLayout();scheduleWorkspaceAutosave(100)});
 });
+document.getElementById('resetWorkspaceBtn')?.addEventListener('click',async()=>{
+  const confirmed=confirm('Nulstil den aktuelle autosavede arbejdssession? Gemte bordplaner og deres stamdata bevares.');
+  if(!confirmed)return;
+  clearTimeout(workspaceAutosaveTimer);
+  workspaceAutosaveSuspended=true;
+  try{
+    await stateDelete('workspace');
+    location.reload();
+  }catch(err){
+    workspaceAutosaveSuspended=false;
+    showImport(`Arbejdsstaten kunne ikke nulstilles: ${err?.message||err}`,'bad');
+  }
+});
 buildRoom();
 updateRuleDataStatus();
 updateRotationStatus();
@@ -3811,7 +3884,7 @@ try{
     refreshBasis();
     showImport(`${students.length} elever indlæst fra Plan 2.0.`);
     document.getElementById('stamdataSummary').textContent=`· ${students.length} elever fra Plan 2.0 ✓`;
-    document.getElementById('stamdataDetails').removeAttribute('open');
+    document.getElementById('stamdataDetails').setAttribute('open','');
     scheduleWorkspaceAutosave(150);
   });
 
