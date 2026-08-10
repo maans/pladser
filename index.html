@@ -446,6 +446,7 @@
     <button id="libraryBtn" class="header-secondary" type="button">Bordplaner</button>
     <button id="savePlanBtn" class="header-secondary" type="button">Gem</button>
     <button id="aboutBtn" class="header-secondary" type="button">Om Pladser</button>
+    <button id="tjekPladserTestBtn" class="header-secondary" type="button" onclick="testTjekPladserV4()">Test Tjek Pladser</button>
     <button id="printBtn" class="header-print" type="button">Print / PDF</button>
   </div>
 </header>
@@ -4268,6 +4269,68 @@ try{
     }catch(_){}
   }
 })();
+
+
+
+/* TJEK_PLADSER_TEST_V4 */
+const TJEK_PLADSER_WEBAPP_URL = 'https://script.google.com/a/macros/himmerlandsefterskole.dk/s/AKfycby2lnT3j0ILoicYrLhjJFyZNHwLqOrp5n5z7dvNthDcltTGRqNrTA1KYwBXYSoneLPq/exec';
+
+function buildTjekPladserTestPlan(){
+  const occupied = currentSeatState().filter(seat =>
+    seat && seat.studentId && seat.studentName
+  );
+
+  const byTable = new Map();
+  occupied.forEach(seat => {
+    const tableId = String(seat.tableId || '').trim();
+    if(!tableId) return;
+    if(!byTable.has(tableId)) byTable.set(tableId, []);
+    byTable.get(tableId).push({
+      id: String(seat.studentId),
+      name: String(seat.studentName).trim(),
+      side: String(seat.side || ''),
+      pos: Number(seat.pos || 0)
+    });
+  });
+
+  const tables = [...byTable.entries()].map(([id, students]) => ({
+    id,
+    label: 'Bord ' + id,
+    students: students.sort((a,b) =>
+      String(a.side).localeCompare(String(b.side)) ||
+      Number(a.pos) - Number(b.pos)
+    )
+  })).filter(table => table.students.length);
+
+  if(!tables.length){
+    throw new Error('Der er ingen elever placeret ved borde endnu.');
+  }
+
+  return {
+    format: 'tjek-pladser',
+    version: 1,
+    title: 'Aktuel bordplan',
+    sourcePlanId: (typeof currentPlanId !== 'undefined' && currentPlanId)
+      ? String(currentPlanId)
+      : '',
+    sourceVersion: '',
+    tables
+  };
+}
+
+function testTjekPladserV4(){
+  try{
+    const payload = {
+      type: 'TJEK_PLADSER_FRAGMENT_PUBLISH',
+      plan: buildTjekPladserTestPlan()
+    };
+    const encoded = encodeURIComponent(JSON.stringify(payload));
+    const url = TJEK_PLADSER_WEBAPP_URL + '?mode=publish#tp=' + encoded;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }catch(err){
+    alert('Tjek Pladser: ' + (err && err.message ? err.message : err));
+  }
+}
 
 </script>
 
