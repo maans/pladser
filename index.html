@@ -96,6 +96,7 @@
     .workflow-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
     .workflow-card h2{font-size:18px;margin-bottom:12px}
     .distribute-main{width:100%;margin-top:12px;padding:12px 14px;font-weight:800;font-size:15px}
+    .distribution-mode-help{margin-top:6px;padding:8px 9px;border:1px solid #e4e7ec;border-radius:9px;background:#f8f9fb;color:var(--muted);font-size:12px;line-height:1.4}
     .secondary-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
     .compact-status{margin-top:10px}
     .settings-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
@@ -469,7 +470,7 @@
     <section id="analysisSection" class="hidden">
       <div id="missingGroupAlert" class="missing-group-alert hidden" role="alert" aria-live="assertive"></div>
       <div class="workflow-card">
-        <h2>Fordel elever</h2>
+        <h2>Fordel</h2>
 
         <label for="basis">Fordelingsgrundlag</label>
         <select id="basis">
@@ -486,12 +487,21 @@
           <option value="randomWithinGroup">Tilfældig fordeling på gruppens borde</option>
         </select>
 
+        <label for="distributionMode">Hvad skal fordeles?</label>
+        <select id="distributionMode">
+          <option value="students-group">Nye pladser – behold bordopstillingen</option>
+          <option value="students-table">Kun nye pladser ved samme bord</option>
+          <option value="tables-only">Kun nye bordpositioner – elever følger bordet</option>
+          <option value="all">Nye bordpositioner og nye elevpladser</option>
+        </select>
+        <div id="distributionModeHelp" class="distribution-mode-help"></div>
+
         <div id="basisStatus" class="status compact-status"></div>
 
         <button id="distributeBtn" class="primary distribute-main">Fordel elever</button>
 
         <div class="secondary-actions">
-          <button id="shuffleBtn">Bland ulåste</button>
+          <button id="shuffleBtn">Ny elevvariation</button>
           <button id="clearBtn">Ryd pladser</button>
         </div>
       </div>
@@ -1825,102 +1835,382 @@ function updateRotationStatus(analysis=null){
   el.textContent=`Reference: “${reference.title}” · ${reference.snapshot.count} elever · ${rotationRuleSummary()}.`;
 }
 
+function distributionMode(){
+  return document.getElementById('distributionMode')?.value||'students-group';
+}
+function updateDistributionModeUi(){
+  const mode=distributionMode();
+  const help=document.getElementById('distributionModeHelp');
+  const btn=document.getElementById('distributeBtn');
+  const descriptions={
+    'students-group':'Bordene og deres gruppeområder bliver stående præcis, hvor de er. Eleverne fordeles på ny mellem deres gruppes borde.',
+    'students-table':'Hvert bord beholder de samme elever. Kun elevernes konkrete pladser rundt om det enkelte bord blandes.',
+    'tables-only':'Bordene får nye fysiske positioner, men gruppe, elever, låsninger og pladser følger med selve bordet. Gruppeborde placeres samlet.',
+    'all':'Gruppebordene får en ny samlet fysisk placering, og eleverne fordeles derefter på ny mellem deres gruppes borde.'
+  };
+  const labels={
+    'students-group':'Fordel elever',
+    'students-table':'Bland pladser ved bordene',
+    'tables-only':'Fordel borde',
+    'all':'Fordel borde og elever'
+  };
+  if(help)help.textContent=descriptions[mode]||descriptions['students-group'];
+  if(btn)btn.textContent=labels[mode]||labels['students-group'];
+}
+
 function validateSelectedMembership(basis){
   const ambiguous=students.filter(s=>membershipsFor(s,basis).length>1);
   if(ambiguous.length)throw new Error(`${ambiguous.length} elever tilhører flere grupper i det valgte fordelingsgrundlag. Ret klassifikationen eller regnearket først.`);
 }
-function distribute(randomizeTies=false){
-  try{
-    const basis=document.getElementById('basis').value;
-    const strategy=document.getElementById('strategy').value;
-    const rules=distributionRules();
-    validateSelectedMembership(basis);
-    applyRowLayout();
-
-    const availableTables=activeStudentTables();
-    const requested=groupAllocations.reduce((sum,a)=>sum+Number(a.tables||0),0);
-    if(requested>availableTables.length){
-      throw new Error(`Der mangler ${requested-availableTables.length} borde. Justér bordopstillingen eller antal borde til grupperne.`);
-    }
-
-    for(const a of groupAllocations){
-      const n=allocationStudentCount(a,basis);
-      const capacity=Number(a.tables||0)*10;
-      if(n>capacity){
-        throw new Error(`${a.groups.join(' + ')} mangler ${n-capacity} pladser. Tilføj ${Math.ceil((n-capacity)/10)} bord(e).`);
-      }
-    }
-
-    const unlocked=seats.filter(s=>s.dataset.locked!=='true' && s.closest('.table')?.dataset.seatsLocked!=='true');
-    unlocked.forEach(s=>setSeat(s,null));
-
-    const retainedStudentIds=new Set(seats.filter(seatIsOccupied).map(s=>String(s.dataset.studentId)));
-    const usable=students.map(s=>({...s,activeGroup:membershipsFor(s,basis)[0]||''}))
-      .filter(s=>s.activeGroup&&!retainedStudentIds.has(String(s.id)));
-
-    let placed=retainedStudentIds.size,overflow=[],cursor=0;
-    teamTables={};
-
-    // Fjern tidligere gruppetilknytninger først. Ellers kan et bord beholde
-    // et gammelt gruppenavn, når en gruppe senere får færre borde.
-    availableTables.forEach(id=>{
-      const table=document.querySelector(`.table[data-table="${id}"]`);
-      if(!table)return;
-      table.dataset.area='';
+function positionSortKey(table){
+  const pos=physicalPositionOf(table?.closest('.table-group'));
+  return pos ? pos.row*100+pos.index : 9999;
+}
+function activeStudentTablesPhysical(){
+  return [...document.querySelectorAll('.table')]
+    .filter(table=>{
       const wrap=table.closest('.table-group');
-      const label=wrap?.querySelector('.team-label');
+      return !wrap?.classList.contains('layout-hidden') && table.dataset.moveTable!=='true';
+    })
+    .sort((a,b)=>positionSortKey(a)-positionSortKey(b))
+    .map(table=>table.dataset.table);
+}
+function currentGroupTableMap(){
+  const active=new Set(activeStudentTablesPhysical());
+  const result={};
+  groupAllocations.forEach((allocation,idx)=>{
+    result[idx+1]=[...document.querySelectorAll('.table')]
+      .filter(table=>active.has(table.dataset.table)&&Number(table.dataset.area||0)===idx+1)
+      .sort((a,b)=>positionSortKey(a)-positionSortKey(b))
+      .map(table=>table.dataset.table);
+  });
+  return result;
+}
+function groupAssignmentsAreUsable(){
+  const map=currentGroupTableMap();
+  const active=new Set(activeStudentTablesPhysical());
+  const assigned=new Set();
+  for(let idx=0;idx<groupAllocations.length;idx++){
+    const ids=map[idx+1]||[];
+    if(ids.length!==Number(groupAllocations[idx].tables||0))return false;
+    for(const id of ids){
+      if(!active.has(id)||assigned.has(id))return false;
+      assigned.add(id);
+    }
+  }
+  return true;
+}
+function paintGroupAssignments(){
+  document.querySelectorAll('.table').forEach(table=>{
+    const wrap=table.closest('.table-group');
+    const label=wrap?.querySelector('.team-label');
+    if(table.dataset.moveTable==='true'){
+      if(label)label.textContent='WWOOFER BORD';
+      wrap?.style.setProperty('--team','#d1d5db');
+      return;
+    }
+    const area=Number(table.dataset.area||0);
+    const allocation=area>0?groupAllocations[area-1]:null;
+    if(!allocation){
       wrap?.style.setProperty('--team','#eef1f4');
       if(label)label.textContent='Ledigt bord';
-    });
-
-    groupAllocations.forEach((allocation,idx)=>{
-      const tableIds=availableTables.slice(cursor,cursor+Number(allocation.tables||0));
-      cursor+=Number(allocation.tables||0);
-      teamTables[idx+1]=tableIds;
-
-      tableIds.forEach(id=>{
-        const table=document.querySelector(`.table[data-table="${id}"]`);
-        if(!table)return;
-        table.dataset.area=String(idx+1);
-        table.closest('.table-group').style.setProperty('--team',allocation.color||GROUP_COLOR_PALETTE[idx%GROUP_COLOR_PALETTE.length]);
-        const label=table.closest('.table-group').querySelector('.team-label');
-        if(label)label.textContent=allocation.groups.join(' + ');
-      });
-
-      let members=usable.filter(s=>allocation.groups.includes(s.activeGroup));
-      members=shuffled(members);
-      const result=distributeWithOppositePriority(members,tableIds,randomizeTies||strategy==='randomWithinGroup',rules);
-      placed+=result.placed;overflow.push(...result.overflow);
-    });
-
-    restoreAssignedTablePresentation();
-    updateCapacity();
-    updateGlobalLockButton();
-    const missingStudents=students.filter(s=>membershipsFor(s,basis).length===0);
-    const missing=missingStudents.length;
-    const unpaired=seats.filter(seat=>{
-      if(!seatIsOccupied(seat))return false;
-      const opposite=seats.find(other=>other.dataset.table===seat.dataset.table&&other.dataset.pos===seat.dataset.pos&&other.dataset.side!==seat.dataset.side);
-      return !seatIsOccupied(opposite);
-    }).length;
-    const rotationResult=rotationAnalysis();
-    updateRotationStatus(rotationResult);
-    const bits=[`${placed} elever placeret`,`${unpaired} uden en elev overfor`,`Regler: ${distributionRuleSummary()}`];
-    if(rotationResult?.text)bits.push(rotationResult.text);
-
-    if(missing){
-      const names=missingStudents
-        .map(s=>s.name||`${s.firstName||''} ${s.lastName||''}`.trim()||String(s.id))
-        .join(', ');
-      bits.push(`${missing} uden valgt gruppetype: ${names}`);
+      return;
     }
-
-    if(overflow.length){
-      const overflowNames=overflow.map(s=>s.name||String(s.id)).join(', ');
-      bits.push(`${overflow.length} uden plads: ${overflowNames}`);
+    wrap?.style.setProperty('--team',allocation.color||GROUP_COLOR_PALETTE[(area-1)%GROUP_COLOR_PALETTE.length]);
+    if(label)label.textContent=allocation.groups.join(' + ');
+  });
+  refreshMoveTableAppearance();
+}
+function initializeGroupAssignments(){
+  const available=activeStudentTablesPhysical();
+  const requested=groupAllocations.reduce((sum,a)=>sum+Number(a.tables||0),0);
+  if(requested>available.length){
+    throw new Error(`Der mangler ${requested-available.length} borde. Justér bordopstillingen eller antal borde til grupperne.`);
+  }
+  available.forEach(id=>{
+    const table=document.querySelector(`.table[data-table="${id}"]`);
+    if(table)table.dataset.area='';
+  });
+  let cursor=0;
+  groupAllocations.forEach((allocation,idx)=>{
+    available.slice(cursor,cursor+Number(allocation.tables||0)).forEach(id=>{
+      const table=document.querySelector(`.table[data-table="${id}"]`);
+      if(table)table.dataset.area=String(idx+1);
+    });
+    cursor+=Number(allocation.tables||0);
+  });
+  paintGroupAssignments();
+  return currentGroupTableMap();
+}
+function ensureGroupAssignments({allowInitialize=true}={}){
+  if(groupAssignmentsAreUsable())return {map:currentGroupTableMap(),initialized:false};
+  const hasLockedOccupants=seats.some(seat=>seatIsOccupied(seat)&&(seat.dataset.locked==='true'||seat.closest('.table')?.dataset.seatsLocked==='true'));
+  if(!allowInitialize||hasLockedOccupants){
+    throw new Error('Bord→gruppe-koblingen passer ikke længere til de valgte grupper. Lås pladserne op og kør en almindelig elevfordeling først.');
+  }
+  return {map:initializeGroupAssignments(),initialized:true};
+}
+function validateGroupCapacity(basis){
+  const availableTables=activeStudentTablesPhysical();
+  const requested=groupAllocations.reduce((sum,a)=>sum+Number(a.tables||0),0);
+  if(requested>availableTables.length){
+    throw new Error(`Der mangler ${requested-availableTables.length} borde. Justér bordopstillingen eller antal borde til grupperne.`);
+  }
+  for(const allocation of groupAllocations){
+    const n=allocationStudentCount(allocation,basis);
+    const capacity=Number(allocation.tables||0)*10;
+    if(n>capacity){
+      throw new Error(`${allocation.groups.join(' + ')} mangler ${n-capacity} pladser. Tilføj ${Math.ceil((n-capacity)/10)} bord(e).`);
     }
+  }
+}
+function distributionResultStatus({placed,overflow=[],modeLabel='',initialized=false}){
+  const basis=document.getElementById('basis').value;
+  const missingStudents=students.filter(s=>membershipsFor(s,basis).length===0);
+  const missing=missingStudents.length;
+  const unpaired=seats.filter(seat=>{
+    if(!seatIsOccupied(seat))return false;
+    const opposite=seats.find(other=>other.dataset.table===seat.dataset.table&&other.dataset.pos===seat.dataset.pos&&other.dataset.side!==seat.dataset.side);
+    return !seatIsOccupied(opposite);
+  }).length;
+  const rotationResult=rotationAnalysis();
+  updateRotationStatus(rotationResult);
+  const bits=[];
+  if(modeLabel)bits.push(modeLabel);
+  bits.push(`${placed} elever placeret`,`${unpaired} uden en elev overfor`,`Regler: ${distributionRuleSummary()}`);
+  if(initialized)bits.push('gruppeborde blev initialiseret');
+  if(rotationResult?.text)bits.push(rotationResult.text);
+  if(missing){
+    const names=missingStudents.map(s=>s.name||`${s.firstName||''} ${s.lastName||''}`.trim()||String(s.id)).join(', ');
+    bits.push(`${missing} uden valgt gruppetype: ${names}`);
+  }
+  if(overflow.length){
+    bits.push(`${overflow.length} uden plads: ${overflow.map(s=>s.name||String(s.id)).join(', ')}`);
+  }
+  showDistribution(bits.join(' · '),overflow.length||missing?'warn':'');
+}
+function redistributeStudentsAcrossGroupTables(randomizeTies=false,modeLabel='Bordopstillingen er bevaret'){
+  const basis=document.getElementById('basis').value;
+  const strategy=document.getElementById('strategy').value;
+  const rules=distributionRules();
+  validateSelectedMembership(basis);
+  applyRowLayout();
+  validateGroupCapacity(basis);
+  const assignment=ensureGroupAssignments({allowInitialize:true});
+  const tableMap=assignment.map;
 
-    showDistribution(bits.join(' · '),overflow.length||missing?'warn':'');
+  const unlocked=seats.filter(s=>s.dataset.locked!=='true'&&s.closest('.table')?.dataset.seatsLocked!=='true');
+  unlocked.forEach(s=>setSeat(s,null));
+
+  const retainedStudentIds=new Set(seats.filter(seatIsOccupied).map(s=>String(s.dataset.studentId)));
+  const usable=students.map(s=>({...s,activeGroup:membershipsFor(s,basis)[0]||''}))
+    .filter(s=>s.activeGroup&&!retainedStudentIds.has(String(s.id)));
+
+  let placed=retainedStudentIds.size;
+  const overflow=[];
+  teamTables={};
+  groupAllocations.forEach((allocation,idx)=>{
+    const tableIds=tableMap[idx+1]||[];
+    teamTables[idx+1]=[...tableIds];
+    let members=usable.filter(s=>allocation.groups.includes(s.activeGroup));
+    members=shuffled(members);
+    const result=distributeWithOppositePriority(members,tableIds,randomizeTies||strategy==='randomWithinGroup',rules);
+    placed+=result.placed;
+    overflow.push(...result.overflow);
+  });
+
+  paintGroupAssignments();
+  updateCapacity();
+  updateGlobalLockButton();
+  distributionResultStatus({placed,overflow,modeLabel,initialized:assignment.initialized});
+  scheduleWorkspaceAutosave(100);
+}
+function redistributeStudentsWithinSameTable(randomizeTies=false){
+  applyRowLayout();
+  const activeIds=activeStudentTablesPhysical();
+  const rules=distributionRules();
+  const originalByTable=new Map();
+  activeIds.forEach(tableId=>{
+    const entries=seats.filter(s=>s.dataset.table===tableId&&seatIsOccupied(s)).map(seat=>({
+      seat,
+      student:studentForSeat(seat),
+      movable:seat.dataset.locked!=='true'&&seat.closest('.table')?.dataset.seatsLocked!=='true'
+    }));
+    originalByTable.set(tableId,entries);
+  });
+
+  let placed=0;
+  const overflow=[];
+  activeIds.forEach(tableId=>{
+    const entries=originalByTable.get(tableId)||[];
+    const movable=entries.filter(entry=>entry.movable).map(entry=>entry.student).filter(Boolean);
+    entries.filter(entry=>entry.movable).forEach(entry=>setSeat(entry.seat,null));
+    placed+=entries.length-movable.length;
+    const result=distributeWithOppositePriority(shuffled(movable),[tableId],true,rules);
+    placed+=result.placed;
+    overflow.push(...result.overflow);
+  });
+
+  updateCapacity();
+  updateGlobalLockButton();
+  const rotationResult=rotationAnalysis();
+  updateRotationStatus(rotationResult);
+  const bits=[`Samme elever er bevaret ved hvert bord`,`${placed} elever placeret`,`Regler: ${distributionRuleSummary()}`];
+  if(rotationResult?.text)bits.push(rotationResult.text);
+  if(overflow.length)bits.push(`${overflow.length} uden plads: ${overflow.map(s=>s.name||String(s.id)).join(', ')}`);
+  showDistribution(bits.join(' · '),overflow.length?'warn':'');
+  scheduleWorkspaceAutosave(100);
+}
+function allPhysicalSlots(){
+  return [
+    ...Array.from({length:8},(_,i)=>`top${i+1}`),
+    ...Array.from({length:8},(_,i)=>`mid${i+1}`),
+    ...Array.from({length:8},(_,i)=>`bot${i+1}`)
+  ];
+}
+function slotCoordinate(slot){
+  const m=/^(top|mid|bot)(\d+)$/.exec(String(slot||''));
+  if(!m)return null;
+  return {row:{top:1,mid:2,bot:3}[m[1]],index:Number(m[2])};
+}
+function slotsAreAdjacent(a,b){
+  const pa=slotCoordinate(a),pb=slotCoordinate(b);
+  return !!pa&&!!pb&&Math.abs(pa.row-pb.row)+Math.abs(pa.index-pb.index)===1;
+}
+function activePhysicalSlots(){
+  const counts=rowCounts.map(v=>Math.max(0,Math.min(8,Number(v)||0)));
+  return allPhysicalSlots().filter(slot=>{
+    const pos=slotCoordinate(slot);
+    return pos&&pos.index<=counts[pos.row-1];
+  });
+}
+function tableIdAtPhysicalSlot(slot){
+  const wrap=document.querySelector(`.table-group.${slot}`);
+  return wrap?.querySelector('.table')?.dataset.table||'';
+}
+function randomConnectedCluster(available,size){
+  const values=[...available];
+  if(size<=0)return [];
+  if(size>values.length)return null;
+  for(let attempt=0;attempt<220;attempt++){
+    const cluster=[];
+    const remaining=new Set(values);
+    const seed=values[Math.floor(Math.random()*values.length)];
+    cluster.push(seed);remaining.delete(seed);
+    while(cluster.length<size){
+      const frontier=[...remaining].filter(slot=>cluster.some(existing=>slotsAreAdjacent(slot,existing)));
+      if(!frontier.length)break;
+      const next=frontier[Math.floor(Math.random()*frontier.length)];
+      cluster.push(next);remaining.delete(next);
+    }
+    if(cluster.length===size)return cluster;
+  }
+  return null;
+}
+function buildCompactClusterPlan(sizes,availableSlots){
+  for(let attempt=0;attempt<900;attempt++){
+    const remaining=new Set(availableSlots);
+    const plan={};
+    const order=sizes.map((size,index)=>({size,index})).sort((a,b)=>b.size-a.size||Math.random()-.5);
+    let ok=true;
+    for(const item of order){
+      const cluster=randomConnectedCluster(remaining,item.size);
+      if(!cluster){ok=false;break}
+      plan[item.index]=cluster;
+      cluster.forEach(slot=>remaining.delete(slot));
+    }
+    if(ok)return plan;
+  }
+  return null;
+}
+function applyPhysicalPositionMap(positionByTable){
+  const slots=allPhysicalSlots();
+  const values=Object.values(positionByTable||{});
+  if(values.length!==layout.length||new Set(values).size!==layout.length||!values.every(slot=>slots.includes(slot))){
+    throw new Error('Den nye bordopstilling kunne ikke valideres. Den tidligere opstilling er bevaret.');
+  }
+  document.querySelectorAll('.table').forEach(table=>{
+    const wrap=table.closest('.table-group');
+    const wanted=positionByTable[table.dataset.table];
+    if(!wrap||!wanted)return;
+    slots.forEach(slot=>wrap.classList.remove(slot));
+    wrap.classList.add(wanted);
+  });
+  applyRowLayout();
+}
+function rearrangeAssignedTables(){
+  applyRowLayout();
+  const assignment=ensureGroupAssignments({allowInitialize:true});
+  const tableMap=assignment.map;
+  const current=currentPhysicalTablePositions();
+  const activeSlots=activePhysicalSlots();
+  const moveTables=[...document.querySelectorAll('.table')].filter(table=>table.dataset.moveTable==='true');
+  const fixedPositions=new Set(moveTables.map(table=>current[table.dataset.table]).filter(Boolean));
+  const availableSlots=activeSlots.filter(slot=>!fixedPositions.has(slot));
+  const sizes=groupAllocations.map((allocation,idx)=>(tableMap[idx+1]||[]).length);
+  const needed=sizes.reduce((sum,n)=>sum+n,0);
+  if(needed>availableSlots.length){
+    throw new Error(`Der mangler ${needed-availableSlots.length} aktive bordpladser til at samle gruppebordene.`);
+  }
+  const clusters=buildCompactClusterPlan(sizes,availableSlots);
+  if(!clusters)throw new Error('Kunne ikke finde en ny bordopstilling, hvor alle gruppeborde hænger sammen. Prøv igen eller justér rækkernes antal borde.');
+
+  const target={};
+  moveTables.forEach(table=>{if(current[table.dataset.table])target[table.dataset.table]=current[table.dataset.table]});
+  const usedPositions=new Set(Object.values(target));
+  const groupTableIds=new Set();
+  groupAllocations.forEach((allocation,idx)=>{
+    const ids=shuffled(tableMap[idx+1]||[]);
+    const slots=shuffled(clusters[idx]||[]);
+    ids.forEach((id,i)=>{
+      target[id]=slots[i];
+      usedPositions.add(slots[i]);
+      groupTableIds.add(id);
+    });
+  });
+
+  const remainingTables=[...document.querySelectorAll('.table')]
+    .map(table=>table.dataset.table)
+    .filter(id=>!Object.prototype.hasOwnProperty.call(target,id));
+  const remainingSlots=allPhysicalSlots().filter(slot=>!usedPositions.has(slot));
+  const openSlots=new Set(remainingSlots);
+  remainingTables.forEach(id=>{
+    const old=current[id];
+    if(old&&openSlots.has(old)){
+      target[id]=old;
+      openSlots.delete(old);
+    }
+  });
+  const stillOpen=[...openSlots];
+  remainingTables.filter(id=>!target[id]).forEach((id,i)=>{target[id]=stillOpen[i]});
+
+  applyPhysicalPositionMap(target);
+  paintGroupAssignments();
+  updateCapacity();
+  updateGlobalLockButton();
+  scheduleWorkspaceAutosave(100);
+  return {initialized:assignment.initialized};
+}
+function distribute(randomizeTies=false,forcedMode=null){
+  try{
+    const mode=forcedMode||distributionMode();
+    if(mode==='students-table'){
+      redistributeStudentsWithinSameTable(randomizeTies);
+      return;
+    }
+    if(mode==='tables-only'){
+      const result=rearrangeAssignedTables();
+      const suffix=result.initialized?' Gruppebordene blev først initialiseret ud fra den aktuelle fysiske rækkefølge.':'';
+      showDistribution(`Ny bordopstilling lavet. Elever, gruppe og låsninger er blevet på deres egne borde.${suffix}`);
+      return;
+    }
+    if(mode==='all'){
+      const moved=rearrangeAssignedTables();
+      redistributeStudentsAcrossGroupTables(true,'Både borde og elevpladser er fordelt på ny');
+      if(moved.initialized)showDistribution(document.getElementById('distributionStatus').textContent+' · gruppeborde blev initialiseret');
+      return;
+    }
+    redistributeStudentsAcrossGroupTables(randomizeTies,'Bordopstillingen er bevaret');
   }catch(err){showDistribution(err.message,'bad')}
 }
 
@@ -1956,6 +2246,10 @@ document.getElementById('fileInput').addEventListener('change',async e=>{
 });
 document.getElementById('basis').addEventListener('change',refreshBasis);
 document.getElementById('strategy').addEventListener('change',refreshBasis);
+document.getElementById('distributionMode')?.addEventListener('change',()=>{
+  updateDistributionModeUi();
+  scheduleWorkspaceAutosave(100);
+});
 ['ruleGender','ruleTeam','ruleHouse','ruleTeamHouse'].forEach(id=>{
   document.getElementById(id)?.addEventListener('change',()=>{
     showDistribution(`Fordelingsregler opdateret: ${distributionRuleSummary()}.`);
@@ -1976,9 +2270,8 @@ document.getElementById('rotationReferencePlan')?.addEventListener('change',asyn
 document.getElementById('distributeBtn').addEventListener('click',()=>distribute(false));
 document.getElementById('clearBtn').addEventListener('click',()=>{clearSeats();showDistribution('Alle pladser er ryddet.')});
 document.getElementById('shuffleBtn').addEventListener('click',()=>{
-  // Lav en ny løsning, men respekter fortsat gruppeborde, låsninger,
-  // fordelingsregler og en eventuel historisk rotationsreference.
-  distribute(true);
+  // Hurtig genvej til en ny elevvariation uden at ændre den fysiske bordopstilling.
+  distribute(true,'students-group');
 });
 function visibleTables(){
   return [...document.querySelectorAll('.table')].filter(table=>
@@ -2242,6 +2535,7 @@ function createPladserDataset(){
     settings:{
       basis:document.getElementById('basis').value,
       strategy:document.getElementById('strategy').value,
+      distributionMode:distributionMode(),
       distributionRules:distributionRules(),
       rotation:{
         reference:rotationReference ? JSON.parse(JSON.stringify(rotationReference)) : null,
@@ -2419,6 +2713,11 @@ function loadPladserDataset(data){
   if(strategy && [...document.getElementById('strategy').options].some(o=>o.value===strategy)){
     document.getElementById('strategy').value=strategy;
   }
+  const savedDistributionMode=data.settings?.distributionMode;
+  if(savedDistributionMode && [...document.getElementById('distributionMode').options].some(o=>o.value===savedDistributionMode)){
+    document.getElementById('distributionMode').value=savedDistributionMode;
+  }
+  updateDistributionModeUi();
 
   const savedRules=data.settings?.distributionRules||{};
   [['ruleGender','gender'],['ruleTeam','team'],['ruleHouse','house'],['ruleTeamHouse','teamHouse']].forEach(([id,key])=>{
@@ -2965,6 +3264,7 @@ async function renderLibrary(){
           </div>
         </button>
         <div class="library-actions">
+          <button type="button" data-action="layout">Brug bordopstilling</button>
           <button type="button" data-action="reference">${rotationReference?.planId===plan.id?'Reference ✓':'Brug som reference'}</button>
           <button type="button" data-action="rename">Omdøb</button>
           <button type="button" data-action="duplicate">Duplikér</button>
@@ -3069,6 +3369,28 @@ async function loadLibraryPlan(id){
   closeLibraryModal();
   showDistribution(`“${record.title}” er åbnet.`);
 }
+async function applyLibraryTableLayout(id){
+  const record=await libraryGet(id);
+  if(!record)throw new Error('Bordplanen blev ikke fundet.');
+  const data=record.dataset||{};
+  if(Array.isArray(data.settings?.rowCounts)){
+    rowCounts=data.settings.rowCounts.slice(0,3).map(Number);
+    ['row1Count','row2Count','row3Count'].forEach((controlId,index)=>{
+      const el=document.getElementById(controlId);
+      if(el)el.value=String(rowCounts[index]??0);
+    });
+  }
+  const restored=restorePhysicalTablePositions(data.room?.tablePositions);
+  applyRowLayout();
+  paintGroupAssignments();
+  updateCapacity();
+  updateGlobalLockButton();
+  scheduleWorkspaceAutosave(100);
+  closeLibraryModal();
+  if(!restored)throw new Error('Den gemte bordopstilling var ugyldig og kunne ikke bruges. Standardopstillingen er gendannet.');
+  showDistribution(`Bordopstillingen fra “${record.title}” er hentet. Aktuelle grupper og elever er blevet på deres egne borde.`);
+}
+
 async function renameLibraryPlan(id){
   const record=await libraryGet(id);
   if(!record)return;
@@ -3207,6 +3529,7 @@ document.getElementById('libraryList').addEventListener('click',async e=>{
   if(!id)return;
   try{
     if(button.dataset.action==='open')await loadLibraryPlan(id);
+    if(button.dataset.action==='layout')await applyLibraryTableLayout(id);
     if(button.dataset.action==='reference'){await setRotationReferenceFromPlan(id);await renderLibrary()}
     if(button.dataset.action==='rename')await renameLibraryPlan(id);
     if(button.dataset.action==='duplicate')await duplicateLibraryPlan(id);
@@ -3788,6 +4111,7 @@ document.getElementById('resetWorkspaceBtn')?.addEventListener('click',async()=>
   }
 });
 buildRoom();
+updateDistributionModeUi();
 updateRuleDataStatus();
 updateRotationStatus();
 refreshRotationReferenceOptions().catch(err=>console.warn('Kunne ikke læse referenceplaner ved opstart',err));
