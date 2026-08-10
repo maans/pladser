@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 
   <style>
     :root{
@@ -446,8 +447,8 @@
     <button id="libraryBtn" class="header-secondary" type="button">Bordplaner</button>
     <button id="savePlanBtn" class="header-secondary" type="button">Gem</button>
     <button id="aboutBtn" class="header-secondary" type="button">Om Pladser</button>
-    <button id="tjekPladserTestBtn" class="header-secondary" type="button" onclick="testTjekPladserV4()">Test Tjek Pladser</button>
-    <button id="printBtn" class="header-print" type="button">Print / PDF</button>
+<button id="tjekPladserTestBtn" class="header-secondary" type="button">Aktivér Tjek Pladser</button>
+    <button id="printBtn" class="header-print" type="button">Åbn PDF / Print</button>
   </div>
 </header>
 
@@ -2793,6 +2794,7 @@ const PLADSER_STATE_STORE='state';
 let currentPlanId=null;
 let currentPlanTitle='';
 let currentPlanContextSignature='';
+let currentTjekPladserPublication=null;
 let workspaceAutosaveTimer=null;
 let workspaceAutosaveSuspended=false;
 
@@ -2985,6 +2987,7 @@ async function saveWorkspaceNow(){
       currentPlanId:currentPlanId||null,
       currentPlanTitle:currentPlanTitle||'',
       currentPlanContextSignature:currentPlanContextSignature||'',
+      currentTjekPladserPublication:currentTjekPladserPublication||null,
       dataset:createPladserDataset()
     });
     return true;
@@ -3008,6 +3011,8 @@ async function restoreWorkspaceOnStartup(){
       currentPlanId=state.currentPlanId||null;
       currentPlanTitle=state.currentPlanTitle||'';
       currentPlanContextSignature=state.currentPlanContextSignature||'';
+      currentTjekPladserPublication=state.currentTjekPladserPublication||null;
+      updateTjekPladserButton();
       showDistribution(currentPlanTitle
         ? `Sidste arbejdssession gendannet: “${currentPlanTitle}”.`
         : 'Sidste arbejdssession er gendannet.');
@@ -3257,11 +3262,14 @@ async function renderLibrary(){
       const basis=basisLabel(data.settings?.basis);
       const stamVersion=data.stamdata?.versionLabel||data.stamdata?.source||'Ukendt stamdata';
       const fingerprint=data.stamdata?.fingerprint?` · ${data.stamdata.fingerprint}`:'';
+      const publication=plan.tjekPladser?.checkUrl
+        ? ` · Tjek Pladser: publiceret ${escapeHtml(prettyDate(plan.tjekPladser.publishedAt))}`
+        : '';
       return `<div class="library-item" data-id="${escapeHtml(plan.id)}">
         <button class="library-open" type="button" data-action="open">
           <div class="library-title">${escapeHtml(plan.title)}</div>
           <div class="library-meta">
-            ${escapeHtml(basis)} · ${students} elever · stamdata: ${escapeHtml(stamVersion)}${escapeHtml(fingerprint)} · gemt ${escapeHtml(prettyDate(plan.updatedAt))}
+            ${escapeHtml(basis)} · ${students} elever · stamdata: ${escapeHtml(stamVersion)}${escapeHtml(fingerprint)} · gemt ${escapeHtml(prettyDate(plan.updatedAt))}${publication}
           </div>
         </button>
         <div class="library-actions">
@@ -3295,10 +3303,12 @@ async function savePlanToLibrary(title){
   const cleanTitle=String(title||'').trim()||suggestedPlanTitle();
 
   let createdAt=now;
+  let existingPublication=null;
   if(useExisting){
     try{
       const existing=await libraryGet(currentPlanId);
       createdAt=existing?.createdAt||now;
+      existingPublication=existing?.tjekPladser||currentTjekPladserPublication||null;
     }catch(err){
       console.warn('Kunne ikke læse eksisterende metadata; bruger nyt createdAt.',err);
     }
@@ -3311,6 +3321,7 @@ async function savePlanToLibrary(title){
     updatedAt:now,
     context:contextNow,
     contextSignature:signatureNow,
+    tjekPladser:useExisting ? existingPublication : null,
     dataset
   };
 
@@ -3320,7 +3331,10 @@ async function savePlanToLibrary(title){
 
   currentPlanId=id;
   currentPlanTitle=record.title;
+  currentTjekPladserPublication=record.tjekPladser||null;
   currentPlanContextSignature=signatureNow;
+  currentTjekPladserPublication=record.tjekPladser||null;
+  updateTjekPladserButton();
 
   saveWorkspaceNow().catch(err=>
     console.warn('Workspace-checkpoint efter gemning mislykkedes',err)
@@ -3359,6 +3373,7 @@ async function loadLibraryPlan(id){
   loadPladserDataset(record.dataset);
   currentPlanId=record.id;
   currentPlanTitle=record.title;
+  currentTjekPladserPublication=record.tjekPladser||null;
   currentPlanContextSignature=
     record.contextSignature ||
     contextSignature({
@@ -3366,6 +3381,7 @@ async function loadLibraryPlan(id){
       areaMappings:record.dataset?.settings?.areaMappings||{},
       stamdataFingerprint:record.dataset?.stamdata?.fingerprint||''
     });
+  updateTjekPladserButton();
   await saveWorkspaceNow();
   closeLibraryModal();
   showDistribution(`“${record.title}” er åbnet.`);
@@ -3418,6 +3434,7 @@ async function duplicateLibraryPlan(id){
     title:`${record.title} – kopi`,
     createdAt:now,
     updatedAt:now,
+    tjekPladser:null,
     dataset:(typeof structuredClone==='function') ? structuredClone(record.dataset) : JSON.parse(JSON.stringify(record.dataset))
   });
   schedulePlanLibrarySync();
@@ -3430,7 +3447,7 @@ async function deleteLibraryPlan(id){
   if(!confirm(`Slet “${record.title}”?`))return;
   await libraryDelete(id);
   schedulePlanLibrarySync();
-  if(currentPlanId===id){currentPlanId=null;currentPlanTitle='';currentPlanContextSignature=''}
+  if(currentPlanId===id){currentPlanId=null;currentPlanTitle='';currentPlanContextSignature='';currentTjekPladserPublication=null;updateTjekPladserButton()}
   await refreshRotationReferenceOptions();
   await renderLibrary();
 }
@@ -3669,6 +3686,37 @@ function buildPrintPreview(){
   const room=document.querySelector('.app .room').cloneNode(true);
   room.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
 
+  // Tjek Pladser QR hører til præcis det publicerede snapshot.
+  const buffet=room.querySelector('.buffet');
+  if(buffet){
+    if(tjekPublicationMatchesCurrent()){
+      const qr=qrDataUrlForCurrentPublication(700);
+      if(qr){
+        buffet.innerHTML='';
+        buffet.style.background='#fff';
+        buffet.style.padding='4px';
+        buffet.style.display='flex';
+        buffet.style.flexDirection='column';
+        buffet.style.alignItems='center';
+        buffet.style.justifyContent='center';
+        const img=document.createElement('img');
+        img.src=qr;
+        img.alt='QR til Tjek Pladser';
+        img.style.width='88%';
+        img.style.height='88%';
+        img.style.objectFit='contain';
+        const label=document.createElement('div');
+        label.textContent='TJEK PLADSER';
+        label.style.fontSize='5px';
+        label.style.fontWeight='900';
+        label.style.marginTop='1px';
+        buffet.append(img,label);
+      }
+    }else{
+      buffet.innerHTML='ANRETTERBORD<br>/ BUFFET<br><span style="font-size:5px;font-weight:900">PUBLICÉR FOR QR</span>';
+    }
+  }
+
   // Printnavnet må gerne afvige fra redigeringsvisningen.
   room.querySelectorAll('.table[data-move-table="true"]').forEach(table=>{
     const label=table.closest('.table-group')?.querySelector('.team-label');
@@ -3716,6 +3764,9 @@ function scalePrintPreview(){
 }
 
 function openPrintPreview(){
+  if(!tjekPublicationMatchesCurrent()){
+    showDistribution('Bordplanen er ikke publiceret i sin nuværende version. Printet viser derfor ingen QR-kode.','warn');
+  }
   buildPrintPreview();
   const modal=document.getElementById('printModal');
   modal.classList.add('open');
@@ -3740,7 +3791,7 @@ function closePrintPreview(){
   });
 }
 
-document.getElementById('printBtn').addEventListener('click',openPrintPreview);
+
 document.getElementById('closePrintPreview').addEventListener('click',closePrintPreview);
 window.addEventListener('resize',()=>{
   if(document.getElementById('printModal').classList.contains('open'))scalePrintPreview();
@@ -3902,10 +3953,22 @@ function buildVectorPdf(){
   if(serviceW>28){
     const cx=serviceX+serviceW/2,cy=pageH/2;
     const buffetRadius=Math.min(16,Math.max(10,(serviceW-12)/2));
-    pdf.setFillColor(247,234,212);pdf.setDrawColor(30,30,30);
-    pdf.circle(cx,cy,buffetRadius,'FD');
-    pdf.setFont('helvetica','bold');pdf.setFontSize(7);pdf.setTextColor(0,0,0);
-    pdf.text(['ANRETTERBORD','/ BUFFET'],cx,cy-1.5,{align:'center'});
+    if(tjekPublicationMatchesCurrent()){
+      const qr=qrDataUrlForCurrentPublication(900);
+      if(qr){
+        const qrSize=Math.min(38,Math.max(28,serviceW-18));
+        pdf.setFillColor(255,255,255);pdf.setDrawColor(25,25,25);pdf.setLineWidth(.35);
+        pdf.roundedRect(cx-qrSize/2-2,cy-qrSize/2-4,qrSize+4,qrSize+10,2,2,'FD');
+        pdf.addImage(qr,'PNG',cx-qrSize/2,cy-qrSize/2-2,qrSize,qrSize);
+        pdf.setFont('helvetica','bold');pdf.setFontSize(7);pdf.setTextColor(0,0,0);
+        pdf.text('TJEK PLADSER',cx,cy+qrSize/2+4,{align:'center'});
+      }
+    }else{
+      pdf.setFillColor(247,234,212);pdf.setDrawColor(30,30,30);
+      pdf.circle(cx,cy,buffetRadius,'FD');
+      pdf.setFont('helvetica','bold');pdf.setFontSize(7);pdf.setTextColor(0,0,0);
+      pdf.text(['ANRETTERBORD','/ BUFFET','PUBLICER FOR QR'],cx,cy-3,{align:'center'});
+    }
     pdf.setLineWidth(.5);
     pdf.line(serviceX+5,cy-27,serviceRight,cy-27);
     pdf.line(serviceX+5,cy+27,serviceRight,cy+27);
@@ -3961,6 +4024,67 @@ async function sendPdfToPlan2(blob,filename){
     window.addEventListener('message',onAck);
     try{window.parent.postMessage(msg,'*')}catch(err){finish(false,err)}
   });
+}
+
+
+async function openGeneratedPdfForPrint(){
+  const btn=document.getElementById('printBtn');
+  const oldText=btn?.textContent||'Åbn PDF / Print';
+
+  // Åbn fanen synkront på klikket, så Chrome ikke blokerer den som popup.
+  const pdfWindow=window.open('about:blank','_blank');
+
+  if(!pdfWindow){
+    alert('Browseren blokerede PDF-vinduet. Tillad pop op-vinduer for Pladser og prøv igen.');
+    return;
+  }
+
+  try{
+    if(btn){
+      btn.disabled=true;
+      btn.textContent='Laver PDF…';
+    }
+
+    try{
+      pdfWindow.document.title='Pladser – laver PDF…';
+      pdfWindow.document.body.innerHTML=
+        '<div style="font:16px system-ui;padding:28px">Laver den færdige A3-PDF…</div>';
+    }catch(_){}
+
+    const {blob,filename}=await generatePdfBlob();
+
+    // Desktopbrowser: åbn selve den genererede PDF i browserens PDF-fremviser.
+    // Herfra kan brugeren printe eller gemme nøjagtig samme farvede PDF.
+    if(!isEmbedded()){
+      const url=URL.createObjectURL(blob);
+      pdfWindow.location.replace(url);
+      pdfWindow.focus();
+
+      // Hold URL'en i live længe nok til PDF-vieweren og evt. printdialog.
+      setTimeout(()=>URL.revokeObjectURL(url),10*60*1000);
+
+      showDistribution('Den færdige PDF er åbnet i et nyt faneblad. Print direkte derfra.');
+      return;
+    }
+
+    // Embedded fallback (Plan 2.0): brug den eksisterende PDF-bro.
+    try{pdfWindow.close()}catch(_){}
+    await sendPdfToPlan2(blob,filename);
+    showDistribution('PDF sendt til Plan 2.0.');
+  }catch(err){
+    try{
+      pdfWindow.document.body.innerHTML=
+        '<div style="font:16px system-ui;padding:28px;color:#991b1b">Kunne ikke lave PDF: '
+        +String(err?.message||err).replace(/[<>&]/g,'')
+        +'</div>';
+    }catch(_){}
+    alert(err?.message||String(err));
+  }finally{
+    if(btn){
+      btn.disabled=false;
+      btn.textContent=oldText;
+    }
+  }
 }
 
 async function shareOrSavePdf(){
@@ -4054,6 +4178,7 @@ function openCleanPrintWindow(){
   printWindow.document.close();
 }
 
+document.getElementById('printBtn').addEventListener('click',openGeneratedPdfForPrint);
 document.getElementById('confirmPrint').addEventListener('click',shareOrSavePdf);
 document.getElementById('openPrintWindow').addEventListener('click',openCleanPrintWindow);
 
@@ -4272,10 +4397,10 @@ try{
 
 
 
-/* TJEK_PLADSER_TEST_V4 */
-const TJEK_PLADSER_WEBAPP_URL = 'https://script.google.com/a/macros/himmerlandsefterskole.dk/s/AKfycbyf1feSldDyABXssH8MnN6NyxC5AnvBAiRyO0PZuff6N_FUpV0HEoMFtvnu7dSaTaa_/exec';
+/* TJEK_PLADSER_PUBLICERING_V4 */
+const TJEK_PLADSER_WEBAPP_URL = 'https://script.google.com/a/macros/himmerlandsefterskole.dk/s/AKfycbwUfmPCp5Sqz3rs9_sIZ68aivYrEDYFPf4GpKqrTWCIQl2hWq463sP8gIFYOcrmYVqw/exec';
 
-function buildTjekPladserTestPlan(){
+function buildTjekPladserPlan(){
   const occupied = currentSeatState().filter(seat =>
     seat && seat.studentId && seat.studentName
   );
@@ -4293,14 +4418,56 @@ function buildTjekPladserTestPlan(){
     });
   });
 
-  const tables = [...byTable.entries()].map(([id, students]) => ({
-    id,
-    label: 'Bord ' + id,
-    students: students.sort((a,b) =>
-      String(a.side).localeCompare(String(b.side)) ||
-      Number(a.pos) - Number(b.pos)
-    )
-  })).filter(table => table.students.length);
+  const tableAssignments = (typeof currentTableAssignments === 'function')
+    ? currentTableAssignments()
+    : {};
+  const physicalPositions = (typeof currentPhysicalTablePositions === 'function')
+    ? currentPhysicalTablePositions()
+    : {};
+
+  function parsePhysicalPosition(value){
+    const m = String(value || '').match(/^(top|mid|bot)(\d+)$/);
+    if(!m) return {row:99,index:99};
+    const row = m[1] === 'top' ? 1 : m[1] === 'mid' ? 2 : 3;
+    return {row,index:Number(m[2]) || 99};
+  }
+
+  const tables = [...byTable.entries()].map(([id, students]) => {
+    const assignment = tableAssignments[id] || {};
+    const groups = Array.isArray(assignment.groups)
+      ? assignment.groups.map(String).filter(Boolean)
+      : [];
+
+    const tableEl = [...document.querySelectorAll('.table')]
+      .find(el => String(el.dataset.table) === String(id));
+    const area = Number(tableEl?.dataset.area || 0);
+    const allocation = area > 0 ? groupAllocations[area - 1] : null;
+    const groupColor = allocation?.color
+      || GROUP_COLOR_PALETTE[(Math.max(1, area) - 1) % GROUP_COLOR_PALETTE.length]
+      || '#eef1f4';
+
+    const physical = parsePhysicalPosition(physicalPositions[id]);
+
+    return {
+      id,
+      label: 'Bord ' + id,
+      groups,
+      groupLabel: groups.join(' + '),
+      groupColor,
+      physicalRow: physical.row,
+      physicalIndex: physical.index,
+      students: students.sort((a,b) =>
+        String(a.side).localeCompare(String(b.side)) ||
+        Number(a.pos) - Number(b.pos)
+      )
+    };
+  })
+  .filter(table => table.students.length)
+  .sort((a,b) =>
+    a.physicalRow - b.physicalRow ||
+    a.physicalIndex - b.physicalIndex ||
+    String(a.id).localeCompare(String(b.id), 'da', {numeric:true})
+  );
 
   if(!tables.length){
     throw new Error('Der er ingen elever placeret ved borde endnu.');
@@ -4309,28 +4476,219 @@ function buildTjekPladserTestPlan(){
   return {
     format: 'tjek-pladser',
     version: 1,
-    title: 'Aktuel bordplan',
+    title: currentPlanTitle || suggestedPlanTitle(),
     sourcePlanId: (typeof currentPlanId !== 'undefined' && currentPlanId)
       ? String(currentPlanId)
       : '',
     sourceVersion: '',
+    sourceSignature: '',
+    basis: document.getElementById('basis')?.value || '',
+    basisLabel: document.getElementById('basis')?.selectedOptions?.[0]?.textContent || '',
     tables
   };
 }
 
-function testTjekPladserV4(){
+
+function tpRandomHex(bytes=16){
+  const arr=new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return [...arr].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function tpNewPlanId(){
+  return 'P-'+tpRandomHex(4).toUpperCase();
+}
+
+function tpNewToken(){
+  return tpRandomHex(16);
+}
+
+function tpCheckUrl(planId,token){
+  return TJEK_PLADSER_WEBAPP_URL
+    +'?plan='+encodeURIComponent(planId)
+    +'&token='+encodeURIComponent(token);
+}
+
+function stableTjekPlanSignature(plan){
+  const canonical={
+    basis:String(plan?.basis||''),
+    tables:(plan?.tables||[]).map(t=>({
+      id:String(t.id||''),
+      groupLabel:String(t.groupLabel||''),
+      groupColor:String(t.groupColor||''),
+      physicalRow:Number(t.physicalRow||99),
+      physicalIndex:Number(t.physicalIndex||99),
+      students:(t.students||[]).map(s=>({
+        id:String(s.id||''),
+        side:String(s.side||''),
+        pos:Number(s.pos||0)
+      }))
+    }))
+  };
+  const str=JSON.stringify(canonical);
+  let h=2166136261;
+  for(let i=0;i<str.length;i++){
+    h^=str.charCodeAt(i);
+    h=Math.imul(h,16777619);
+  }
+  return ('00000000'+(h>>>0).toString(16)).slice(-8);
+}
+
+function currentTjekPlanSnapshot(){
+  const plan=buildTjekPladserPlan();
+  plan.sourcePlanId=currentPlanId ? String(currentPlanId) : '';
+  plan.sourceVersion=new Date().toISOString();
+  plan.sourceSignature=stableTjekPlanSignature(plan);
+  return plan;
+}
+
+function tjekPublicationMatchesCurrent(){
+  if(!currentTjekPladserPublication?.checkUrl)return false;
   try{
-    const payload = {
-      type: 'TJEK_PLADSER_FRAGMENT_PUBLISH',
-      plan: buildTjekPladserTestPlan()
-    };
-    const encoded = encodeURIComponent(JSON.stringify(payload));
-    const url = TJEK_PLADSER_WEBAPP_URL + '?mode=publish#tp=' + encoded;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }catch(err){
-    alert('Tjek Pladser: ' + (err && err.message ? err.message : err));
+    return currentTjekPladserPublication.sourceSignature===stableTjekPlanSignature(buildTjekPladserPlan());
+  }catch(_){
+    return false;
   }
 }
+
+function updateTjekPladserButton(){
+  const btn=document.getElementById('tjekPladserTestBtn');
+  if(!btn)return;
+  if(tjekPublicationMatchesCurrent()){
+    btn.textContent='Tjek Pladser ✓';
+    btn.title='Publiceret. Klik igen for at publicere en ny QR-version.';
+  }else if(currentTjekPladserPublication?.checkUrl){
+    btn.textContent='Publicér ændringer';
+    btn.title='Bordplanen er ændret siden sidste publicering.';
+  }else{
+    btn.textContent='Aktivér Tjek Pladser';
+    btn.title='Gem og publicér den aktuelle bordplan til Tjek Pladser.';
+  }
+}
+
+function qrDataUrlForCurrentPublication(size=512){
+  const url=String(currentTjekPladserPublication?.checkUrl||'');
+  if(!url||!window.QRCode)return '';
+  const host=document.createElement('div');
+  host.style.position='fixed';
+  host.style.left='-10000px';
+  host.style.top='-10000px';
+  document.body.appendChild(host);
+  try{
+    new QRCode(host,{
+      text:url,
+      width:size,
+      height:size,
+      colorDark:'#000000',
+      colorLight:'#ffffff',
+      correctLevel:QRCode.CorrectLevel.M
+    });
+    const canvas=host.querySelector('canvas');
+    if(canvas)return canvas.toDataURL('image/png');
+    const img=host.querySelector('img');
+    return img?.src||'';
+  }finally{
+    setTimeout(()=>host.remove(),0);
+  }
+}
+
+async function savePublicationToLocalPlan(result){
+  if(!currentPlanId)return;
+  const record=await libraryGet(currentPlanId);
+  if(!record)return;
+  record.tjekPladser={
+    planId:String(result.planId||''),
+    token:String(result.token||''),
+    checkUrl:String(result.checkUrl||''),
+    publishedAt:String(result.publishedAt||new Date().toISOString()),
+    sourceSignature:String(result.sourceSignature||''),
+    reused:!!result.reused
+  };
+  await libraryPut(record);
+  currentTjekPladserPublication=record.tjekPladser;
+  schedulePlanLibrarySync();
+  updateTjekPladserButton();
+  await saveWorkspaceNow();
+  if(document.getElementById('libraryModal')?.classList.contains('open'))await renderLibrary();
+}
+
+async function activateTjekPladser(){
+  const btn=document.getElementById('tjekPladserTestBtn');
+
+  // Åbn fanebladet SYNKRONT på brugerens klik, før nogen await.
+  // Ellers kan browserens popup-beskyttelse blokere det.
+  const publishTarget='tjekPladserPublish_'+Date.now().toString(36);
+  const publishWindow=window.open('about:blank',publishTarget);
+
+  if(!publishWindow){
+    alert('Browseren blokerede publiceringsfanen. Tillad pop op-vinduer for Pladser og prøv igen.');
+    return;
+  }
+
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Publicerer…'}
+
+    // Gem først den redigerbare original lokalt.
+    const record=await savePlanToLibrary(currentPlanTitle||suggestedPlanTitle());
+
+    const plan=currentTjekPlanSnapshot();
+    plan.sourcePlanId=record.id;
+    plan.sourceVersion=record.updatedAt||new Date().toISOString();
+    plan.title=record.title||plan.title;
+    plan.sourceSignature=stableTjekPlanSignature(plan);
+
+    // Nyt snapshot-ID/token laves lokalt og er autoritativt på serveren.
+    const planId=tpNewPlanId();
+    const token=tpNewToken();
+    const checkUrl=tpCheckUrl(planId,token);
+    plan.planId=planId;
+    plan.token=token;
+
+    // Gem QR-oplysninger i den lokale plan med det samme.
+    const localPublication={
+      ok:true,
+      reused:false,
+      planId,
+      token,
+      title:plan.title,
+      publishedAt:new Date().toISOString(),
+      sourcePlanId:plan.sourcePlanId,
+      sourceSignature:plan.sourceSignature,
+      checkUrl
+    };
+    await savePublicationToLocalPlan(localPublication);
+
+    // Send til Apps Script i det allerede åbnede synlige faneblad.
+    const form=document.createElement('form');
+    form.method='POST';
+    form.action=TJEK_PLADSER_WEBAPP_URL;
+    form.target=publishTarget;
+    form.style.display='none';
+
+    const planInput=document.createElement('textarea');
+    planInput.name='plan';
+    planInput.value=JSON.stringify(plan);
+    form.appendChild(planInput);
+
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(()=>{ try{form.remove()}catch(_){} },1000);
+
+    showDistribution('Publiceringen er sendt til Tjek Pladser. Kontrollér fanebladet, og luk det derefter. QR-koden er klar i Print / PDF.');
+  }catch(err){
+    try{
+      publishWindow.document.body.innerHTML='<p style="font-family:sans-serif;padding:24px">Publiceringen kunne ikke startes.</p>';
+    }catch(_){}
+    const message=err?.message||String(err);
+    showDistribution('Kunne ikke publicere til Tjek Pladser: '+message,'bad');
+    alert(message);
+  }finally{
+    if(btn){btn.disabled=false;updateTjekPladserButton()}
+  }
+}
+
+document.getElementById('tjekPladserTestBtn').addEventListener('click',activateTjekPladser);
+updateTjekPladserButton();
 
 </script>
 
