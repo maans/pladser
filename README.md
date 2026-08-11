@@ -1,50 +1,56 @@
 # Pladser
 
-**Pladser** er en lokal app til at fordele elever på siddepladser i en spisesal.
+**Pladser** er et værktøj til at lave, tilpasse, gemme og udskrive bordplaner for elever i en spisesal.
 
-Appen tager udgangspunkt i skolens eksisterende elevdata og grupperinger – fx teams, gange, linjefag, rejsehold eller valgfag – og omsætter dem til en fysisk bordplan.
+Appen tager udgangspunkt i skolens stamdata og grupperinger – fx **teams, gange/Studenthouse, linjefag, rejsehold og valgfag** – og omsætter dem til en fysisk bordplan.
 
-Den automatiske fordeling er et udgangspunkt. Bordplanen kan bagefter tilpasses manuelt, låses, gemmes, genbruges og udskrives som A3/PDF.
+Den automatiske fordeling er kun et udgangspunkt. Bordplanen kan bagefter redigeres manuelt, borde og elever kan låses, tidligere planer kan bruges som reference, og den færdige plan kan publiceres til companion-appen **Tjek Pladser** og udskrives som en farvet A3-PDF med QR-kode.
 
-Pladser kan bruges som selvstændig webapp eller integreret som HTML-app i **Plan 2.0**.
+> **Kort fortalt:** Stamdata → fordel elever → tilpas → gem bordplan → aktivér Tjek Pladser → åbn PDF / print.
 
-## Funktioner
+---
 
-- Import af elevdata fra Excel-regneark
-- Modtagelse af stamdata direkte fra Plan 2.0
-- Automatisk sammensætning af elevnavne fra fornavn og efternavn
-- Genkendelse og klassificering af grupper
-- Valgfrit fordelingsgrundlag
-- Fordeling af elevgrupper over et passende antal borde
-- 10 siddepladser pr. bord
-- Mulighed for manuelt at justere, hvor mange borde en gruppe råder over
-- Fordeling med hensyn til elever siddende overfor hinanden
-- Regler for bl.a. køn, teams og gange
-- Mulighed for at sprede eller samle bestemte elevgrupper
-- Rotation med udgangspunkt i en tidligere bordplan
-- Manuel flytning og bytning af elever
-- Bytning af hele borde med elever og gruppetilknytning
-- Låsning af enkelte elevplaceringer
-- Låsning af hele borde, inklusive eventuelle tomme pladser
-- Gemte bordplaner, som kan åbnes, omdøbes og duplikeres
-- Backup og gendannelse af gemte bordplaner
-- Skjulbart sidepanel, så hele spisesalen kan ses under redigering
-- Separat A3-printpreview
-- PDF-generering og native deling
-- PDF-overførsel til Plan 2.0
+## Indhold
+
+- [Sådan bruges Pladser](#sådan-bruges-pladser)
+- [Stamdata](#stamdata)
+- [Automatisk fordeling](#automatisk-fordeling)
+- [Bordopstilling og fysisk placering](#bordopstilling-og-fysisk-placering)
+- [Manuel redigering](#manuel-redigering)
+- [Gemte bordplaner](#gemte-bordplaner)
+- [Tjek Pladser](#tjek-pladser)
+- [Print og PDF](#print-og-pdf)
+- [Hvad gemmes hvor?](#hvad-gemmes-hvor)
+- [Plan 2.0](#plan-20)
+- [Status og næste skridt](#status-og-næste-skridt)
+
+---
+
+## Sådan bruges Pladser
+
+Den normale arbejdsgang er:
+
+1. **Indlæs stamdata** fra Excel eller Plan 2.0.
+2. **Vælg fordelingsgrundlag**, fx Teams eller Gange / Studenthouse.
+3. **Tilpas bordopstillingen** og hvor mange borde hver gruppe råder over.
+4. **Vælg fordelingsregler**, fx køn, Team, gang og rotation fra en tidligere plan.
+5. Klik **Fordel elever**.
+6. **Tilpas manuelt** ved behov – flyt elever, byt borde og lås placeringer.
+7. **Gem bordplanen** i det lokale bordplansbibliotek.
+8. Klik **Aktivér Tjek Pladser**, hvis planen skal bruges til fremmødekontrol.
+9. Klik **Åbn PDF / Print** for at åbne den færdige farvede A3-PDF.
+
+---
 
 ## Stamdata
 
-Pladser kan få sine stamdata på to måder:
+Pladser kan i dag modtage stamdata på to måder:
 
-1. **Fra Plan 2.0**, når Pladser åbnes som en integreret HTML-app.
-2. **Fra et Excel-regneark**, når Pladser bruges selvstændigt eller som fallback.
+### Excel-regneark
 
-Det betyder, at den samme Pladser-app kan fungere både inde i Plan 2.0 og som selvstændigt værktøj.
+Når Pladser bruges selvstændigt, kan et Excel-regneark indlæses direkte i browseren.
 
-## Regnearksformat
-
-Ved manuel import kan Pladser læse elevdata fra et regneark med bl.a. følgende oplysninger:
+Pladser leder bl.a. efter oplysninger som:
 
 - `Fornavn`
 - `Efternavn`
@@ -54,235 +60,322 @@ Ved manuel import kan Pladser læse elevdata fra et regneark med bl.a. følgende
 
 Elevens navn dannes af `Fornavn` + `Efternavn`.
 
-Det er ikke nødvendigt, at alle oplysninger findes, for at Pladser kan bruges. Flere oplysninger giver blot mulighed for flere fordelingsregler.
+Det er ikke nødvendigt, at alle felter findes. Flere oplysninger giver blot flere muligheder for fordelingsregler.
+
+### Plan 2.0
+
+Når Pladser kører integreret i **Plan 2.0**, kan stamdata sendes direkte ind i appen uden manuel filimport.
 
 ### Grupper
 
-Kolonnen `Grupper` kan indeholde flere gruppetilhørsforhold for samme elev.
+En elev kan tilhøre flere grupper på samme tid. Eksempler:
 
-Eksempel:
+```text
+Team 1 MM/TK
+Badminton
+Madkunst
+Drenge 26
+```
 
-    Team 1 MM/TK
-    Badminton
-    Madkunst
-    Drenge 26
-
-De forskellige gruppenavne kan klassificeres efter type, så brugeren kan vælge, hvilket princip bordfordelingen skal tage udgangspunkt i.
-
-Det kan fx være:
+Pladser klassificerer grupperne, så brugeren kan vælge et relevant fordelingsgrundlag, fx:
 
 - Teams
 - Linjefag
 - Rejsehold
 - Valgfag
-- Andre relevante gruppeformer
+- andre relevante gruppeformer
 
 `Studenthouse` behandles særskilt og svarer til elevens gang.
 
 Køn kan i de nuværende Viggo-stamdata aflæses både fra kolonnen `Køn` og fra grupper som `Drenge 26` og `Piger 26`.
 
-## Bord- og gruppestruktur
-
-Spisesalen har 18 almindelige elevborde med 10 pladser ved hvert bord – i alt 180 elevpladser. Derudover indgår **Wwoofer-bordet** i den fysiske oversigt. Det er bordet for Wwooferne og indgår ikke i den almindelige elevfordeling.
-
-Et valgt fordelingsgrundlag opdeler eleverne i grupper. Hver gruppe tildeles et antal borde, der passer til gruppens størrelse. En mindre gruppe kan derfor have ét bord, mens en større gruppe kan have to, tre eller flere borde.
-
-Antallet af borde kan justeres manuelt. Det er også muligt at samle flere grupper i samme bordområde.
-
-Fordelingen foregår altid **inden for de borde, som gruppen er tildelt** – ikke på tværs af hele spisesalen.
-
-Hvis der fx fordeles efter gange, kan et antal borde være knyttet til `Gimle`, mens andre borde er knyttet til `Hjemstavn`.
-
-Bordene kan bagefter flyttes fysisk uden at miste deres gruppetilknytning.
+---
 
 ## Automatisk fordeling
 
-Pladser forsøger at skabe en brugbar social placering frem for blot at fylde ledige stole.
+Pladser forsøger at skabe en **brugbar social placering**, ikke bare at fylde ledige stole.
 
-Et grundprincip er:
+Et centralt princip er:
 
 > Elever skal så vidt muligt have en anden elev siddende direkte overfor sig.
 
-Fordeleren forsøger samtidig at holde de borde, som gruppen råder over, hensigtsmæssigt fyldt.
+Hvis en gruppe fx råder over tre borde, kan en fordeling derfor blive:
 
-Hvis en gruppe fx råder over tre borde, kan en fordeling se sådan ud:
+- 24 elever → **8 / 8 / 8**
+- 25 elever → **9 / 8 / 8**
+- 26 elever → **10 / 8 / 8**
 
-- 24 elever → 8 / 8 / 8
-- 25 elever → 9 / 8 / 8
-- 26 elever → 10 / 8 / 8
+Ved 26 elever er `10 / 8 / 8` bedre end `9 / 9 / 8`, fordi alle elever dermed kan få en elev siddende overfor.
 
-Ved 26 elever er 10 / 8 / 8 bedre end 9 / 9 / 8, fordi alle elever dermed kan få en elev siddende overfor.
+### Fordelingsregler
 
-## Fordelingsregler
+Ud over den grundlæggende placering kan Pladser tage hensyn til:
 
-Ud over den grundlæggende bordfordeling kan brugeren vælge regler for, hvordan eleverne skal blandes.
+- **Køn** – fordel drenge og piger så ligeligt som muligt.
+- **Team** – spred, saml eller ignorér elever fra samme Team.
+- **Gang / Studenthouse** – spred, saml eller ignorér elever fra samme gang.
+- **Team + gang** – tag højde for kombinationen af de to.
 
-### Køn
+Reglerne er ønsker til den bedst mulige fordeling. De kan ikke altid opfyldes fuldstændigt, hvis elevtal, låste placeringer eller andre hensyn står i vejen.
 
-Drenge og piger kan fordeles så ligeligt som muligt mellem gruppens borde.
+### Rotation fra en tidligere bordplan
 
-### Team
+En gemt bordplan kan bruges som **reference** for en ny fordeling.
 
-Elever fra samme Team kan enten:
+Pladser kan forsøge at give eleverne:
 
-- spredes mellem bordene
-- samles
-- ignoreres som fordelingsregel
-
-### Gang / Studenthouse
-
-Elever fra samme gang kan tilsvarende spredes eller samles.
-
-### Team og gang sammen
-
-Pladser kan også tage højde for kombinationen af Team og gang.
-
-Det gør det fx muligt at sprede elever, der både er på samme Team og bor på samme gang, selv om de enkelte Team- og gangregler er sat anderledes.
-
-Reglerne er ønsker til den bedst mulige fordeling. De kan derfor ikke altid opfyldes fuldstændigt, hvis elevtal, låste placeringer eller andre hensyn står i vejen.
-
-## Rotation fra en tidligere bordplan
-
-En gemt bordplan kan markeres som **reference** for en ny fordeling.
-
-Pladser kan derefter forsøge at give eleverne nye relationer og nye placeringer i forhold til den tidligere plan.
-
-Der kan bl.a. tages hensyn til:
-
-- andet bord
-- anden side af bordet
+- et andet bord
+- en anden side af bordet
 - nye bordfæller
-- ny sidemakker
-- ny elev overfor
+- en ny sidemakker
+- en ny elev overfor
 
-De enkelte rotationshensyn kan ignoreres, forsøges opfyldt eller prioriteres.
+Formålet er reel variation fra tidligere planer – ikke bare tilfældig omrokering.
 
-Formålet er ikke blot at flytte eleverne tilfældigt, men at skabe reel variation fra den tidligere bordplan.
+---
 
-En elev, der fx sad ved siden af og overfor bestemte elever sidst, vil så vidt muligt få andre elever omkring sig næste gang.
+## Bordopstilling og fysisk placering
 
-Pladser kan efter fordelingen vise, hvor meget den nye plan faktisk adskiller sig fra referenceplanen.
+Spisesalen vises som tre vandrette rækker med op til otte fysiske bordpositioner i hver række.
+
+Standardopstillingen er **8 / 3 / 8**. Nederste rækkes sidste bord bruges som standard til **Wwoofer-bordet** og indgår ikke i den almindelige elevfordeling.
+
+Den samlede elevkapacitet er **180 pladser**.
+
+Brugeren kan ændre antallet af aktive borde i hver række efter behov.
+
+### Gruppeområder
+
+Når der fx fordeles efter gange, kan flere borde høre til `Gimle`, mens andre hører til `Hjemstavn`.
+
+Hver gruppe får sin egen farve. Farven følger gruppen, også når bordene flyttes fysisk.
+
+### Flyt hele borde
+
+Borde kan byttes fysisk efter fordelingen. Når et bord flyttes, følger følgende med:
+
+- elever
+- gruppetilknytning
+- gruppefarve
+
+Det betyder, at bordets sociale/gruppemæssige betydning bevares, selv om det flyttes til en anden position i salen.
+
+---
 
 ## Manuel redigering
 
 Den automatiske fordeling er altid kun et udgangspunkt.
 
-### Flyt elever
+### Flyt og byt elever
 
 Elever kan markeres og flyttes eller byttes mellem pladser.
 
-### Flyt borde
+### Lås elever
 
-Hele borde kan markeres og byttes.
+En enkelt elevplacering kan låses, så den bevares ved en ny fordeling.
 
-Når et bord flyttes, følger følgende med:
+### Lås hele borde
 
-- eleverne
-- gruppetilknytningen
-- områdets farve
-
-Bordet er dermed stadig en del af sin oprindelige gruppe, selv om det fysisk flyttes til en anden position i spisesalen.
-
-### Lås elever og borde
-
-Enkelte elevplaceringer kan låses.
-
-Et helt bord kan også låses. Når et bord er låst:
+Når et helt bord låses:
 
 - bliver eleverne ved bordet stående
-- kan de tomme pladser ved bordet ikke bruges til andre elever
+- kan tomme pladser ved bordet ikke bruges til andre elever
 - respekteres bordet ved nye fordelinger
 
-**Lås alle** låser alle borde, deres elevplaceringer og deres eventuelle tomme pladser.
-
+**Lås alle** låser alle borde og deres pladser.  
 **Lås alle op** frigiver dem igen.
+
+---
 
 ## Gemte bordplaner
 
-Bordplaner kan gemmes i Pladser og åbnes igen senere.
+Pladser har et lokalt **Bordplansbibliotek**.
 
-En gemt plan indeholder den redigerbare bordfordeling og er derfor ikke kun et færdigt PDF-billede af resultatet.
+En gemt bordplan indeholder den redigerbare tilstand – ikke kun et PDF-billede.
 
-I oversigten over bordplaner kan planer bl.a.:
+Planer kan bl.a.:
 
 - åbnes
+- opdateres
 - omdøbes
 - duplikeres
 - slettes
-- vælges som reference for en ny fordeling
+- bruges som reference for rotation
+- bruges som kilde til en tidligere bordopstilling
 
-Der kan desuden eksporteres og importeres backup af de gemte bordplaner.
+Der kan også eksporteres og importeres en **ZIP-backup** af bordplansbiblioteket.
 
-Det gør det muligt både at bevare tidligere placeringer og bruge dem aktivt, når en ny bordplan skal laves.
+> **Vigtigt:** Bordplansbiblioteket er i den nuværende version lokalt i den browser, hvor Pladser bruges. Central lagring på Google Drev er planlagt, men ikke implementeret endnu.
 
-## Brugerflade
+---
 
-Pladser består af to hovedområder:
+## Tjek Pladser
 
-- et sidepanel til fordeling, regler og indstillinger
-- selve spisesalen, hvor bordplanen redigeres visuelt
+**Tjek Pladser** er en mobil companion-app til fremmødekontrol ved de fysiske borde.
 
-Sidepanelet kan skjules, så hele spisesalen kan udnytte vinduets bredde.
+Når en færdig bordplan aktiveres med **Aktivér Tjek Pladser**, publicerer Pladser et snapshot af den aktuelle plan til skolens Google Apps Script / Google Sheet-løsning.
 
-De mest almindelige funktioner ligger fremme i den normale arbejdsgang, mens mere sjældne valg og opsætning er samlet under indstillinger.
+Den publicerede version får et permanent link og en QR-kode.
 
-Knappen **Om Pladser** viser denne beskrivelse direkte i appen, når der er internetforbindelse.
+### QR-kode
+
+QR-koden indsættes i den genererede A3-PDF ved området omkring anretterbordet.
+
+En lærer kan scanne QR-koden med telefonens kamera og åbne præcis den publicerede bordplan i Tjek Pladser.
+
+En gammel udskrift peger fortsat på den version, der faktisk blev printet. Ændringer i Pladser ændrer ikke automatisk en allerede publiceret QR-version.
+
+### Mobil arbejdsgang
+
+I Tjek Pladser kan læreren:
+
+- se bordene i deres **fysiske rækkefølge**
+- se samme **gruppefarver** som i Pladser
+- swipe mellem borde på hele hovedområdet
+- markere enkelte elever som fraværende
+- bruge **Alle er til stede** som hurtig handling
+- automatisk gemme ændringer, når der swipes videre
+- se, hvilke borde andre lærere allerede har kontrolleret
+- se hvem der er markeret fraværende
+
+Navigationsrækken bevarer sin position, også når appen synkroniserer i baggrunden.
+
+### Delte kontroller
+
+Flere lærere kan kontrollere forskellige borde samtidigt. Tjek Pladser synkroniserer den aktuelle status via Google Sheet.
+
+En kontrolsession genbruges, så længe der har været aktivitet inden for **90 minutter**. Efter mere end 90 minutters inaktivitet oprettes en ny session.
+
+### Statistik
+
+Google Sheet-løsningen indeholder læsevenlige faner til bl.a.:
+
+- **Tjek**
+- **Registreringer**
+- **Seneste tjek**
+- **Statistik**
+
+Statistikken viser bl.a.:
+
+- elev
+- antal tjek
+- antal fravær
+- fraværsprocent
+- seneste fravær
+
+Tekniske faner og ID-kolonner holdes skjult fra den almindelige visning.
+
+---
 
 ## Print og PDF
 
-Pladser har et separat printlayout beregnet til **A3**.
+Pladser genererer en farvet **A3-PDF** direkte.
 
-Printvisningen er bevidst enklere end redigeringsvisningen:
+Knappen **Åbn PDF / Print**:
 
-- ingen redigeringskontroller
-- intet sidepanel
-- ingen låse- eller markeringssymboler
-- tydelige elevnavne
-- maksimal udnyttelse af A3-formatet
-- elevens side af bordet kan fortsat aflæses
+1. genererer den færdige PDF
+2. åbner PDF'en i browserens PDF-fremviser
+3. gør det muligt at printe eller gemme præcis den version, der vises
 
-Elevnavnene placeres, så også lange navne kan udnytte pladsen hen over selve bordet uden unødigt at gå ind over nabobordene.
+PDF'en indeholder:
 
-PDF'en kan deles via systemets normale delingsfunktion.
+- den fysiske bordopstilling
+- elevnavne
+- gruppefarver
+- tydelige bordplaceringer
+- QR-kode til Tjek Pladser, når planen er publiceret
 
-Når Pladser kører inde i Plan 2.0, kan PDF'en desuden sendes videre til Plan 2.0.
+Den tidligere HTML/browser-printvisning er ikke den primære printvej; den genererede PDF er det endelige printprodukt.
 
-## Lokal behandling
+Når Pladser kører inde i Plan 2.0, kan PDF'en desuden sendes direkte videre til Plan 2.0.
 
-Elevdata og selve fordelingsberegningen behandles lokalt. Der kræves ikke en AI-model eller en ekstern beregningstjeneste for at lave en bordplan.
+---
 
-Det gør Pladser velegnet både som selvstændigt værktøj og som en del af Plan 2.0.
+## Hvad gemmes hvor?
 
-## Integration med Plan 2.0
+Det er vigtigt at skelne mellem de forskellige typer data.
 
-Pladser kan indgå som HTML-app i **Plan 2.0**.
+| Data | Nuværende placering |
+|---|---|
+| Indlæste stamdata | Browserens aktuelle arbejdsstate |
+| Redigerbar bordplan under arbejdet | Browserens arbejdsstate |
+| Gemte bordplaner | Lokalt Bordplansbibliotek i browseren |
+| Backup af bordplaner | ZIP-fil, som brugeren eksporterer |
+| Publiceret Tjek Pladser-plan | Google Apps Script / Google Sheet |
+| Fremmøderegistreringer | Google Sheet |
+| Statistik fra Tjek Pladser | Google Sheet |
+| A3-bordplan | Genereret PDF |
 
-Integrationen går begge veje:
+### Lokal behandling og data
 
-**Plan 2.0 → Pladser**
+Selve elevfordelingen udføres lokalt i browseren. Der bruges ikke en AI-model eller en ekstern beregningstjeneste til at lave bordplanen.
 
-Pladser kan modtage skolens stamdata direkte fra Plan 2.0 og bruge dem som grundlag for bordfordelingen.
+Stamdata, som indlæses fra et regneark, uploades ikke automatisk nogen steder.
 
-**Pladser → Plan 2.0**
+**Kun når brugeren aktivt vælger `Aktivér Tjek Pladser`, sendes det nødvendige snapshot af den aktuelle bordplan til skolens Tjek Pladser-løsning.**
 
-Pladser kan generere en PDF af den færdige bordplan og sende den videre til Plan 2.0.
+---
 
-Hvis Pladser ikke modtager stamdata fra Plan 2.0, kan brugeren fortsat importere et regneark manuelt.
+## Plan 2.0
 
-Pladser er derfor ikke afhængig af Plan 2.0 for at fungere.
+Pladser kan bruges både selvstændigt og integreret i **Plan 2.0**.
 
-## Status
+### Plan 2.0 → Pladser
 
-Pladser er under aktiv udvikling, men den samlede arbejdsgang fungerer nu:
+Plan 2.0 kan sende stamdata direkte til Pladser.
 
-**stamdata → valg af grupper → fordelingsregler → automatisk fordeling → manuel tilpasning → gem bordplan → A3/PDF**
+### Pladser → Plan 2.0
 
-Tidligere bordplaner kan samtidig bruges som grundlag for nye fordelinger, så Pladser kan skabe variation fra gang til gang i stedet for blot at lave en ny tilfældig placering.
+Pladser kan generere en PDF af den færdige bordplan og sende den tilbage til Plan 2.0.
 
-Den videre udvikling fokuserer især på:
+Hvis Pladser ikke modtager stamdata fra Plan 2.0, kan Excel-import fortsat bruges som fallback.
 
-- endnu bedre social variation mellem bordplaner
-- bedre hjælp til at vurdere kvaliteten af en fordeling
-- flere relevante fordelingshensyn uden at gøre appen kompliceret
-- fortsat forbedring af A3/PDF-læseligheden
-- tættere integration med Plan 2.0
+---
+
+## Status og næste skridt
+
+Den centrale arbejdsgang fungerer nu:
+
+**stamdata → grupper → fordelingsregler → automatisk fordeling → manuel tilpasning → lokal gemning → Aktivér Tjek Pladser → QR → mobil kontrol → A3-PDF / print**
+
+### Næste udviklingsetape
+
+Den næste større etape er central lagring og versionsstyring via Google Workspace:
+
+1. **Stamdata på Google Drev**
+   - en fast mappe med flere stamdataversioner
+   - Pladser kan opdage, at en nyere version findes
+   - brugeren vælger selv, hvornår den nye version bliver aktiv
+
+2. **Adgangskontrol**
+   - kun godkendte medarbejderkonti kan hente skolens stamdata
+   - tydelig visning af hvilken Google-konto Pladser er forbundet som
+
+3. **Bordplaner på Google Drev**
+   - `Gem` kan på sigt betyde central lagring
+   - planer kan åbnes fra en anden computer/browser
+   - hver plan kan knyttes til den stamdataversion, den blev lavet med
+
+4. **Webapp / Chrome-udvidelse**
+   - Pladser kan hostes centralt som en intern webapp
+   - en lille Chrome-udvidelse kan fungere som launcher
+   - skolens IT kan evt. udrulle den til medarbejdere via Google Workspace
+
+Den lokale lagring kan fortsat fungere som cache/sikkerhedsnet, mens Google Drev bliver det centrale arkiv.
+
+---
+
+## Teknisk
+
+Pladser er i øjeblikket samlet som en browserbaseret HTML-app.
+
+Vigtige klientbiblioteker bruges bl.a. til:
+
+- læsning af Excel-regneark
+- ZIP-backup
+- PDF-generering
+- QR-generering
+
+Appen kan køre selvstændigt i browseren eller integreres i Plan 2.0.
+
+Tjek Pladser benytter Google Apps Script og Google Sheets som backend for publicerede planer, kontroller og statistik.
