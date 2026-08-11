@@ -238,7 +238,14 @@
     .door-gap{position:absolute;left:-4px;width:4px;height:58px;background:white}
     .door-gap.one{top:250px}.door-gap.two{top:525px}
     .kitchen{position:absolute;right:-4px;top:290px;width:92px;height:125px;border:4px solid #222;border-right:none;background:white;display:grid;place-items:center;font-weight:750;writing-mode:vertical-rl;transform:rotate(180deg)}
-    .buffet{position:absolute;right:115px;top:328px;width:160px;height:160px;border:2px solid #222;border-radius:50%;display:grid;place-items:center;text-align:center;background:#f7ead4;font-weight:750}
+    .buffet{position:absolute;right:115px;top:328px;width:160px;height:160px;border:2px solid #222;border-radius:50%;display:grid;place-items:center;text-align:center;background:#f7ead4;font-weight:750;overflow:hidden}
+    .buffet.tp-editor-qr{background:#fff;border-radius:18px;padding:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+    .buffet.tp-editor-qr img{width:116px;height:116px;object-fit:contain;display:block}
+    .buffet.tp-editor-qr .tp-label{font-size:10px;font-weight:900;letter-spacing:.04em}
+    .buffet.tp-editor-pending{border-radius:18px;padding:14px;background:#fff7d6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+    .buffet.tp-editor-pending strong{font-size:14px;line-height:1.2}
+    .buffet.tp-editor-pending button{border:1px solid #c8a94c;background:#fff;border-radius:10px;padding:8px 10px;font-weight:800;font-size:11px;cursor:pointer}
+    .buffet.tp-editor-none{border-radius:18px;padding:12px}
     .grid{
       display:grid;
       grid-template-columns:repeat(8,235px);
@@ -2429,6 +2436,232 @@ function currentSeatState(){
 }
 
 
+// Publicerings-snapshot er bevidst kompakt og indeholder IKKE stamdata/elevnavne.
+// Det gemmer kun det, der er nødvendigt for at gendanne den publicerede bordplan
+// mod den stamdata-version, der allerede er indlæst i Pladser.
+const PLADSER_PUBLISHED_STATE_FORMAT='pladser-published-state';
+const PLADSER_PUBLISHED_STATE_VERSION=1;
+
+function stripPublishedSeats(savedSeats){
+  return (Array.isArray(savedSeats)?savedSeats:[]).map(saved=>({
+    tableId:String(saved?.tableId||''),
+    side:String(saved?.side||''),
+    pos:Number(saved?.pos||0),
+    studentId:saved?.studentId==null?null:String(saved.studentId),
+    activeGroup:String(saved?.activeGroup||''),
+    locked:!!saved?.locked
+  }));
+}
+
+function compactPublishedStateFromDataset(data){
+  if(!data?.room||!Array.isArray(data.room.seats))return null;
+  return {
+    format:PLADSER_PUBLISHED_STATE_FORMAT,
+    formatVersion:PLADSER_PUBLISHED_STATE_VERSION,
+    stamdata:{
+      source:String(data.stamdata?.source||''),
+      versionLabel:String(data.stamdata?.versionLabel||''),
+      fingerprint:String(data.stamdata?.fingerprint||'')
+    },
+    settings:{
+      basis:String(data.settings?.basis||''),
+      areaMappings:{...(data.settings?.areaMappings||{})},
+      rowCounts:Array.isArray(data.settings?.rowCounts)
+        ? data.settings.rowCounts.slice(0,3).map(Number)
+        : [...rowCounts],
+      groupAllocations:Array.isArray(data.settings?.groupAllocations)
+        ? data.settings.groupAllocations.map((a,i)=>({
+            groups:Array.isArray(a?.groups)?a.groups.map(String):[],
+            tables:Number(a?.tables||0),
+            color:String(a?.color||GROUP_COLOR_PALETTE[i%GROUP_COLOR_PALETTE.length])
+          }))
+        : []
+    },
+    room:{
+      tablePositions:{...(data.room?.tablePositions||{})},
+      tableAssignments:JSON.parse(JSON.stringify(data.room?.tableAssignments||{})),
+      tableLocks:{...(data.room?.tableLocks||{})},
+      seats:stripPublishedSeats(data.room?.seats)
+    }
+  };
+}
+
+function createPublishedPlanState(){
+  return {
+    format:PLADSER_PUBLISHED_STATE_FORMAT,
+    formatVersion:PLADSER_PUBLISHED_STATE_VERSION,
+    stamdata:{
+      source:String(stamdataSource||''),
+      versionLabel:String(currentStamdataVersionLabel()||''),
+      fingerprint:String(currentStamdataFingerprint()||'')
+    },
+    settings:{
+      basis:String(document.getElementById('basis')?.value||''),
+      areaMappings:currentAreaMappings(),
+      rowCounts:[...rowCounts],
+      groupAllocations:groupAllocations.map((a,i)=>({
+        groups:Array.isArray(a.groups)?a.groups.map(String):[],
+        tables:Number(a.tables||0),
+        color:String(a.color||GROUP_COLOR_PALETTE[i%GROUP_COLOR_PALETTE.length])
+      }))
+    },
+    room:{
+      tablePositions:currentPhysicalTablePositions(),
+      tableAssignments:currentTableAssignments(),
+      tableLocks:Object.fromEntries(
+        [...document.querySelectorAll('.table')].map(t=>[
+          t.dataset.table,
+          t.dataset.seatsLocked==='true'
+        ])
+      ),
+      seats:stripPublishedSeats(currentSeatState())
+    }
+  };
+}
+
+function sanitizePublishedPlanState(state){
+  if(!state||typeof state!=='object')return null;
+  // Gen-kompaktér også et allerede kompakt snapshot, så elevnavne eller
+  // fremtidige uvedkommende felter aldrig bliver båret videre ved gemning.
+  if(state.format===PLADSER_PUBLISHED_STATE_FORMAT){
+    return {
+      format:PLADSER_PUBLISHED_STATE_FORMAT,
+      formatVersion:PLADSER_PUBLISHED_STATE_VERSION,
+      stamdata:{
+        source:String(state.stamdata?.source||''),
+        versionLabel:String(state.stamdata?.versionLabel||''),
+        fingerprint:String(state.stamdata?.fingerprint||'')
+      },
+      settings:{
+        basis:String(state.settings?.basis||''),
+        areaMappings:{...(state.settings?.areaMappings||{})},
+        rowCounts:Array.isArray(state.settings?.rowCounts)
+          ? state.settings.rowCounts.slice(0,3).map(Number)
+          : [],
+        groupAllocations:Array.isArray(state.settings?.groupAllocations)
+          ? state.settings.groupAllocations.map((a,i)=>({
+              groups:Array.isArray(a?.groups)?a.groups.map(String):[],
+              tables:Number(a?.tables||0),
+              color:String(a?.color||GROUP_COLOR_PALETTE[i%GROUP_COLOR_PALETTE.length])
+            }))
+          : []
+      },
+      room:{
+        tablePositions:{...(state.room?.tablePositions||{})},
+        tableAssignments:JSON.parse(JSON.stringify(state.room?.tableAssignments||{})),
+        tableLocks:{...(state.room?.tableLocks||{})},
+        seats:stripPublishedSeats(state.room?.seats)
+      }
+    };
+  }
+  return null;
+}
+
+function sanitizeTjekPladserPublication(publication){
+  if(!publication||typeof publication!=='object')return publication||null;
+  const clean={...publication};
+  let state=sanitizePublishedPlanState(clean.publishedPlanState);
+  // V16-migration: den version gemte ved en fejl et helt Pladser-datasæt.
+  // Vi konverterer det én gang til den kompakte struktur og fjerner kopien.
+  if(!state&&clean.publishedDataset){
+    state=compactPublishedStateFromDataset(clean.publishedDataset);
+  }
+  if(state)clean.publishedPlanState=state;
+  else delete clean.publishedPlanState;
+  delete clean.publishedDataset;
+  return clean;
+}
+
+function publicationNeedsPrivacyMigration(publication){
+  return !!publication?.publishedDataset ||
+    !!publication?.publishedPlanState?.room?.seats?.some?.(s=>
+      Object.prototype.hasOwnProperty.call(s||{},'studentName')
+    );
+}
+
+async function migrateLegacyPublicationStorage(){
+  let migrated=0;
+  try{
+    const plans=await libraryGetAll();
+    for(const record of plans){
+      if(!publicationNeedsPrivacyMigration(record?.tjekPladser))continue;
+      record.tjekPladser=sanitizeTjekPladserPublication(record.tjekPladser);
+      await libraryPut(record);
+      migrated++;
+    }
+  }catch(err){
+    console.warn('Kunne ikke rydde ældre publiceringssnapshots i Bordplansbiblioteket',err);
+  }
+
+  try{
+    const state=await stateGet('workspace');
+    if(publicationNeedsPrivacyMigration(state?.currentTjekPladserPublication)){
+      state.currentTjekPladserPublication=
+        sanitizeTjekPladserPublication(state.currentTjekPladserPublication);
+      await statePut(state);
+      migrated++;
+    }
+  }catch(err){
+    console.warn('Kunne ikke rydde ældre publiceringssnapshot i autosave',err);
+  }
+  return migrated;
+}
+
+function applyPublishedPlanState(state){
+  const snapshot=sanitizePublishedPlanState(state);
+  if(!snapshot)throw new Error('Det publicerede gendannelsespunkt er ugyldigt.');
+
+  const expected=String(snapshot.stamdata?.fingerprint||'');
+  const actual=String(currentStamdataFingerprint()||'');
+  if(expected&&actual&&expected!==actual){
+    throw new Error(
+      'Den publicerede version bruger en anden stamdata-version. Åbn bordplanen med den rigtige stamdata-version før du fortryder ændringer.'
+    );
+  }
+
+  const basis=snapshot.settings?.basis;
+  if(basis&&[...document.getElementById('basis').options].some(o=>o.value===basis)){
+    document.getElementById('basis').value=basis;
+  }
+  refreshBasis();
+
+  if(Array.isArray(snapshot.settings?.rowCounts)&&snapshot.settings.rowCounts.length){
+    rowCounts=snapshot.settings.rowCounts.slice(0,3).map(Number);
+    ['row1Count','row2Count','row3Count'].forEach((id,i)=>{
+      const el=document.getElementById(id);
+      if(el)el.value=String(rowCounts[i]??0);
+    });
+    applyRowLayout();
+  }
+
+  if(Array.isArray(snapshot.settings?.groupAllocations)){
+    groupAllocations=snapshot.settings.groupAllocations.map((a,i)=>({
+      groups:Array.isArray(a.groups)?a.groups.map(String):[],
+      tables:Number(a.tables||1),
+      color:a.color||GROUP_COLOR_PALETTE[i%GROUP_COLOR_PALETTE.length]
+    })).filter(a=>a.groups.length);
+    renderCounts(getBasisGroups(),document.getElementById('basis').value);
+  }
+
+  restoreAreaMappings(snapshot.settings?.areaMappings);
+  restoreTableAssignments(snapshot.room?.tableAssignments);
+  restorePhysicalTablePositions(snapshot.room?.tablePositions);
+  applyRowLayout();
+  restoreAssignedTablePresentation();
+  restoreSeatsFromDataset(snapshot.room?.seats||[]);
+  restoreTableLocks(snapshot.room?.tableLocks);
+  updateGlobalLockButton();
+
+  selected=null;
+  selectedTable=null;
+  document.querySelectorAll('.selected,.selected-table').forEach(el=>
+    el.classList.remove('selected','selected-table')
+  );
+  updateCapacity();
+  scheduleEditorPublicationViewUpdate(0);
+}
+
+
 function currentStamdataFingerprint(){
   const canonical=students.map(s=>({
     id:String(s.id??''),
@@ -2784,6 +3017,11 @@ function loadPladserDataset(data){
   });
 
   updateCapacity();
+  if(
+    typeof scheduleEditorPublicationViewUpdate==='function'
+  ){
+    scheduleEditorPublicationViewUpdate(0);
+  }
 }
 
 const PLADSER_DB_NAME='PladserLibrary';
@@ -2981,6 +3219,8 @@ async function stateDelete(key){
 async function saveWorkspaceNow(){
   if(workspaceAutosaveSuspended||!students.length)return false;
   try{
+    currentTjekPladserPublication=
+      sanitizeTjekPladserPublication(currentTjekPladserPublication);
     await statePut({
       key:'workspace',
       updatedAt:new Date().toISOString(),
@@ -2998,6 +3238,7 @@ async function saveWorkspaceNow(){
 }
 function scheduleWorkspaceAutosave(delay=450){
   if(workspaceAutosaveSuspended||!students.length)return;
+  scheduleEditorPublicationViewUpdate(25);
   clearTimeout(workspaceAutosaveTimer);
   workspaceAutosaveTimer=setTimeout(()=>saveWorkspaceNow(),delay);
 }
@@ -3011,7 +3252,7 @@ async function restoreWorkspaceOnStartup(){
       currentPlanId=state.currentPlanId||null;
       currentPlanTitle=state.currentPlanTitle||'';
       currentPlanContextSignature=state.currentPlanContextSignature||'';
-      currentTjekPladserPublication=state.currentTjekPladserPublication||null;
+      currentTjekPladserPublication=sanitizeTjekPladserPublication(state.currentTjekPladserPublication||null);
       updateTjekPladserButton();
       showDistribution(currentPlanTitle
         ? `Sidste arbejdssession gendannet: “${currentPlanTitle}”.`
@@ -3308,7 +3549,7 @@ async function savePlanToLibrary(title){
     try{
       const existing=await libraryGet(currentPlanId);
       createdAt=existing?.createdAt||now;
-      existingPublication=existing?.tjekPladser||currentTjekPladserPublication||null;
+      existingPublication=sanitizeTjekPladserPublication(existing?.tjekPladser||currentTjekPladserPublication||null);
     }catch(err){
       console.warn('Kunne ikke læse eksisterende metadata; bruger nyt createdAt.',err);
     }
@@ -3331,9 +3572,8 @@ async function savePlanToLibrary(title){
 
   currentPlanId=id;
   currentPlanTitle=record.title;
-  currentTjekPladserPublication=record.tjekPladser||null;
+  currentTjekPladserPublication=sanitizeTjekPladserPublication(record.tjekPladser||null);
   currentPlanContextSignature=signatureNow;
-  currentTjekPladserPublication=record.tjekPladser||null;
   updateTjekPladserButton();
 
   saveWorkspaceNow().catch(err=>
@@ -3373,7 +3613,7 @@ async function loadLibraryPlan(id){
   loadPladserDataset(record.dataset);
   currentPlanId=record.id;
   currentPlanTitle=record.title;
-  currentTjekPladserPublication=record.tjekPladser||null;
+  currentTjekPladserPublication=sanitizeTjekPladserPublication(record.tjekPladser||null);
   currentPlanContextSignature=
     record.contextSignature ||
     contextSignature({
@@ -4241,7 +4481,10 @@ updateDistributionModeUi();
 updateRuleDataStatus();
 updateRotationStatus();
 refreshRotationReferenceOptions().catch(err=>console.warn('Kunne ikke læse referenceplaner ved opstart',err));
-window.__pladserStartupRestore=restoreWorkspaceOnStartup();
+window.__pladserStartupRestore=(async()=>{
+  await migrateLegacyPublicationStorage();
+  return restoreWorkspaceOnStartup();
+})();
 
 const sidebarToggle=document.getElementById('sidebarToggle');
 const mainApp=document.getElementById('mainApp');
@@ -4397,7 +4640,7 @@ try{
 
 
 
-/* TJEK_PLADSER_PUBLICERING_V4 */
+/* TJEK_PLADSER_PUBLICERING_V6_PRIVACY_SAFE */
 const TJEK_PLADSER_WEBAPP_URL = 'https://script.google.com/a/macros/himmerlandsefterskole.dk/s/AKfycbwUfmPCp5Sqz3rs9_sIZ68aivYrEDYFPf4GpKqrTWCIQl2hWq463sP8gIFYOcrmYVqw/exec';
 
 function buildTjekPladserPlan(){
@@ -4564,6 +4807,183 @@ function updateTjekPladserButton(){
     btn.textContent='Aktivér Tjek Pladser';
     btn.title='Gem og publicér den aktuelle bordplan til Tjek Pladser.';
   }
+  scheduleEditorPublicationViewUpdate(0);
+}
+
+
+let editorPublicationTimer=null;
+let editorQrCacheUrl='';
+let editorQrCacheData='';
+
+function scheduleEditorPublicationViewUpdate(delay=40){
+  clearTimeout(editorPublicationTimer);
+  editorPublicationTimer=setTimeout(
+    renderEditorPublicationState,
+    delay
+  );
+}
+
+function editorQrDataUrl(){
+  const url=String(
+    currentTjekPladserPublication?.checkUrl||''
+  );
+
+  if(!url)return '';
+
+  if(
+    editorQrCacheUrl===url &&
+    editorQrCacheData
+  ){
+    return editorQrCacheData;
+  }
+
+  const data=
+    qrDataUrlForCurrentPublication(420);
+
+  editorQrCacheUrl=url;
+  editorQrCacheData=data||'';
+
+  return editorQrCacheData;
+}
+
+function renderEditorPublicationState(){
+  const buffet=
+    document.querySelector(
+      'main .room > .buffet'
+    );
+
+  if(!buffet)return;
+
+  buffet.classList.remove(
+    'tp-editor-qr',
+    'tp-editor-pending',
+    'tp-editor-none'
+  );
+
+  if(
+    !currentTjekPladserPublication?.checkUrl
+  ){
+    buffet.classList.add('tp-editor-none');
+    buffet.innerHTML=
+      'ANRETTERBORD<br>/ BUFFET' +
+      '<br><span style="font-size:10px;margin-top:6px">' +
+      'Ikke publiceret</span>';
+    return;
+  }
+
+  if(tjekPublicationMatchesCurrent()){
+    const qr=editorQrDataUrl();
+
+    buffet.classList.add('tp-editor-qr');
+    buffet.innerHTML='';
+
+    if(qr){
+      const img=
+        document.createElement('img');
+      img.src=qr;
+      img.alt='QR til Tjek Pladser';
+
+      const label=
+        document.createElement('div');
+      label.className='tp-label';
+      label.textContent='TJEK PLADSER';
+
+      buffet.append(img,label);
+    }else{
+      buffet.textContent='TJEK PLADSER ✓';
+    }
+
+    return;
+  }
+
+  buffet.classList.add(
+    'tp-editor-pending'
+  );
+
+  buffet.innerHTML=
+    '<strong>Venter på<br>publicering…</strong>' +
+    '<button type="button" id="undoPublishedChangesBtn">' +
+    'Fortryd ændringer</button>';
+
+  buffet
+    .querySelector(
+      '#undoPublishedChangesBtn'
+    )
+    ?.addEventListener(
+      'click',
+      e=>{
+        e.preventDefault();
+        e.stopPropagation();
+        undoToPublishedVersion();
+      }
+    );
+}
+
+async function undoToPublishedVersion(){
+  if(
+    !currentPlanId ||
+    !currentTjekPladserPublication?.checkUrl
+  ){
+    return;
+  }
+
+  const confirmed=confirm(
+    'Fortryd alle ændringer siden den senest publicerede version?'
+  );
+
+  if(!confirmed)return;
+
+  try{
+    const record=
+      await libraryGet(currentPlanId);
+
+    if(!record){
+      throw new Error(
+        'Den aktuelle bordplan blev ikke fundet i biblioteket.'
+      );
+    }
+
+    const publication=sanitizeTjekPladserPublication(
+      currentTjekPladserPublication || record.tjekPladser
+    );
+    const snapshot=publication?.publishedPlanState||null;
+
+    if(!snapshot){
+      throw new Error(
+        'Denne publicering har endnu ikke et sikkert gendannelsespunkt. Publicér planen én gang igen, før “Fortryd ændringer” kan bruges.'
+      );
+    }
+
+    workspaceAutosaveSuspended=true;
+
+    try{
+      applyPublishedPlanState(snapshot);
+
+      currentPlanId=record.id;
+      currentPlanTitle=record.title;
+      currentPlanContextSignature=
+        record.contextSignature ||
+        contextSignature();
+
+      currentTjekPladserPublication=publication;
+      if(publicationNeedsPrivacyMigration(record.tjekPladser)){
+        record.tjekPladser=publication;
+        await libraryPut(record);
+      }
+    }finally{
+      workspaceAutosaveSuspended=false;
+    }
+
+    await saveWorkspaceNow();
+
+    updateTjekPladserButton();
+
+    showDistribution(
+      'Ændringerne er fortrudt. Den publicerede bordplan er gendannet.'
+    );
+  }catch(err){
+    alert(err?.message||String(err));
+  }
 }
 
 function qrDataUrlForCurrentPublication(size=512){
@@ -4602,7 +5022,8 @@ async function savePublicationToLocalPlan(result){
     checkUrl:String(result.checkUrl||''),
     publishedAt:String(result.publishedAt||new Date().toISOString()),
     sourceSignature:String(result.sourceSignature||''),
-    reused:!!result.reused
+    reused:!!result.reused,
+    publishedPlanState:createPublishedPlanState()
   };
   await libraryPut(record);
   currentTjekPladserPublication=record.tjekPladser;
